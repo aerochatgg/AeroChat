@@ -123,6 +123,14 @@
     font-family: 'Nunito Sans', sans-serif; font-size: 13.5px; color: var(--ink); outline: none;
   }
   .add-row input::placeholder { color: var(--ink-soft); }
+  .add-row textarea {
+    flex: 1; padding: 10px 14px; border-radius: 14px; resize: none; max-height: 160px; line-height: 1.4;
+    height: 40px; overflow-y: hidden; scrollbar-width: thin;
+    border: 1px solid rgba(255,255,255,0.8); background: var(--glass-strong);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+    font-family: 'Nunito Sans', sans-serif; font-size: 13.5px; color: var(--ink); outline: none;
+  }
+  .add-row textarea::placeholder { color: var(--ink-soft); }
   .add-btn {
     border: none; cursor: pointer; padding: 0 18px; border-radius: 14px;
     font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 14px; color: #fff;
@@ -291,8 +299,10 @@
   }
   .msg-action-btn:hover { transform: scale(1.12); background: #fff; }
   .msg-edited { opacity: 0.75; font-style: italic; }
+  .msg-bubble { white-space: pre-wrap; overflow-wrap: anywhere; } /* keep Shift+Enter line breaks */
   .msg-edit-input {
     width: min(420px, 50vw); padding: 9px 12px; border-radius: 14px; outline: none;
+    resize: none; line-height: 1.4; max-height: 200px; display: block;
     border: 2px solid var(--aqua-accent); background: var(--glass-strong);
     font-family: 'Nunito Sans', sans-serif; font-size: 14.5px; color: var(--ink);
   }
@@ -366,11 +376,12 @@
     background: var(--glass-strong); border: 1px solid rgba(255,255,255,0.85);
     box-shadow: 0 3px 12px rgba(10,60,100,0.15), inset 0 1px 0 rgba(255,255,255,0.9);
   }
-  .composer input {
-    flex: 1; border: none; background: transparent; outline: none;
-    font-family: 'Nunito Sans', sans-serif; font-size: 14.5px; color: var(--ink); padding: 10px 0;
+  .composer textarea {
+    flex: 1; border: none; background: transparent; outline: none; resize: none;
+    font-family: 'Nunito Sans', sans-serif; font-size: 14.5px; line-height: 1.4; color: var(--ink);
+    padding: 10px 0; height: 40px; max-height: 160px; overflow-y: auto;
   }
-  .composer input::placeholder { color: var(--ink-soft); }
+  .composer textarea::placeholder { color: var(--ink-soft); }
   .send-btn {
     width: 38px; height: 38px; border-radius: 50%; border: none; cursor: pointer;
     background: linear-gradient(160deg, var(--lime), var(--lime-dark));
@@ -388,7 +399,9 @@
   .attach-btn.open { background: #fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--aqua-accent) 45%, transparent); }
 
   /* ---------- Emoji & GIF picker ---------- */
-  .composer { position: relative; }
+  .composer { position: relative; align-items: flex-end; } /* buttons stay on the bottom line as the box grows */
+  .composer .attach-btn { margin-bottom: 4px; }
+  .composer .send-btn { margin-bottom: 1px; flex-shrink: 0; }
   .picker {
     display: none; position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20;
     width: 340px; height: 380px; flex-direction: column; overflow: hidden;
@@ -808,7 +821,7 @@
     <div class="broadcast-panel" id="broadcastPanel" style="display:none;">
       <div class="broadcast-label">📣 Broadcast as Bubbles</div>
       <div class="add-row">
-        <input type="text" id="broadcastInput" placeholder="Message everyone...">
+        <textarea id="broadcastInput" rows="1" placeholder="Message everyone..." title="Enter to send · Shift+Enter for a new line"></textarea>
         <button class="add-btn" id="broadcastBtn">Send</button>
       </div>
       <div class="add-error" id="broadcastStatus"></div>
@@ -881,7 +894,7 @@
             </div>
           </div>
         </div>
-        <input type="text" id="msgInput" placeholder="Type a message or paste a GIF link">
+        <textarea id="msgInput" rows="1" placeholder="Type a message or paste a GIF link"></textarea>
         <button class="send-btn" id="sendBtn">➤</button>
       </div>
     </div>
@@ -1891,14 +1904,17 @@
     const bubble = row.querySelector('.msg-bubble');
     if (!bubble) return;
     row.classList.add('editing');
-    const input = document.createElement('input');
+    const input = document.createElement('textarea');
     input.className = 'msg-edit-input';
+    input.rows = 1;
     input.value = m.content;
     const hint = document.createElement('div');
     hint.className = 'msg-edit-hint';
-    hint.textContent = 'Enter to save · Esc to cancel';
+    hint.textContent = 'Enter to save · Shift+Enter for new line · Esc to cancel';
     bubble.replaceWith(input);
     input.after(hint);
+    autoGrow(input);
+    input.addEventListener('input', () => autoGrow(input));
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
 
@@ -1909,7 +1925,8 @@
     };
     input.addEventListener('keydown', async e => {
       if (e.key === 'Escape') { e.stopPropagation(); finish(); return; }
-      if (e.key !== 'Enter') return;
+      if (!isSendKey(e)) return;
+      e.preventDefault();
       const text = input.value.trim();
       if (!text || text === m.content) { finish(); return; }
       input.disabled = true;
@@ -2211,7 +2228,8 @@
     if (!m) return null;
     if (parseInviteLink(m.content)) return '✉️ Group invite';
     if (isImageUrl(m.content)) return '🖼️ Image';
-    return m.content.length > 90 ? m.content.slice(0, 90) + '…' : m.content;
+    const oneLine = m.content.replace(/\s*\n\s*/g, ' ');
+    return oneLine.length > 90 ? oneLine.slice(0, 90) + '…' : oneLine;
   }
   function senderNameFor(m) {
     if (m.sender_id === me.id) return 'You';
@@ -2459,6 +2477,7 @@
     const caret = start + emoji.length;
     input.focus();
     input.setSelectionRange(caret, caret);
+    autoGrow(input);
   }
 
   function switchPickerTab(tab) {
@@ -2546,7 +2565,30 @@
   document.getElementById('addFriendBtn').addEventListener('click', addFriend);
   document.getElementById('addFriendInput').addEventListener('keydown', e => { if (e.key === 'Enter') addFriend(); });
   document.getElementById('sendBtn').addEventListener('click', sendMessage);
-  document.getElementById('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+  // Text boxes that grow with their text (up to their CSS max-height, then scroll)
+  function autoGrow(el) {
+    el.style.height = 'auto';
+    const h = el.scrollHeight + (el.offsetHeight - el.clientHeight); // include borders
+    el.style.height = h + 'px';
+    // only show a scrollbar once it hits its max height
+    el.style.overflowY = h > parseFloat(getComputedStyle(el).maxHeight) ? 'auto' : 'hidden';
+  }
+  // Enter = send, Shift+Enter = new line
+  function isSendKey(e) {
+    return e.key === 'Enter' && !e.shiftKey && !e.isComposing;
+  }
+
+  const msgInputEl = document.getElementById('msgInput');
+  msgInputEl.addEventListener('keydown', e => {
+    if (isSendKey(e)) { e.preventDefault(); sendMessage().then(() => autoGrow(msgInputEl)); }
+  });
+  msgInputEl.addEventListener('input', () => autoGrow(msgInputEl));
+
+  const broadcastInputEl = document.getElementById('broadcastInput');
+  broadcastInputEl.addEventListener('keydown', e => {
+    if (isSendKey(e)) { e.preventDefault(); document.getElementById('broadcastBtn').click(); }
+  });
+  broadcastInputEl.addEventListener('input', () => autoGrow(broadcastInputEl));
 
   document.getElementById('attachBtn').addEventListener('click', () => {
     if (!activeFriend && !activeGroup) return;
@@ -2852,6 +2894,7 @@
     }
     status.textContent = `Sent to ${rows.length} ${rows.length === 1 ? 'person' : 'people'}!`;
     input.value = '';
+    autoGrow(input);
   });
 
   function applySpeakerToElement(el) {
