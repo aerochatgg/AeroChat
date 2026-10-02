@@ -272,6 +272,7 @@ async function getSavedCustomSettings() {
 }
 
 async function saveCustomSettings(settings) {
+  writeThemeCache({ custom: settings });
   try {
     const { data: { session } } = await supabaseClient.auth.getSession();
     if (!session) return;
@@ -421,6 +422,7 @@ async function getSavedThemeId() {
 }
 
 async function saveThemeId(themeId) {
+  writeThemeCache({ themeId });
   try {
     const { data: { session } } = await supabaseClient.auth.getSession();
     if (!session) return;
@@ -428,16 +430,60 @@ async function saveThemeId(themeId) {
   } catch (e) {}
 }
 
-// Call this on page load - applies the user's saved theme (colors + background)
-async function initPageTheme() {
-  const themeId = await getSavedThemeId();
+// ---------- Theme cache (this device) ----------
+// The real theme lives in the user's profile, but fetching it takes a moment,
+// so pages would flash the default Aero look first. We keep a copy in
+// localStorage and apply it instantly, then double-check with the server.
+const THEME_CACHE_KEY = 'aerochat-theme';
+let __appliedThemeKey = null; // what's on screen right now, so we don't redraw it twice
+
+function readThemeCache() {
+  try { return JSON.parse(localStorage.getItem(THEME_CACHE_KEY)) || null; } catch (e) { return null; }
+}
+function writeThemeCache(changes) {
+  try {
+    const next = { ...(readThemeCache() || {}), ...changes };
+    localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(next));
+  } catch (e) {}
+}
+function themeKeyFor(themeId, settings) {
+  return themeId === 'custom' ? 'custom:' + JSON.stringify(settings) : themeId;
+}
+
+function applyFullTheme(themeId, settings) {
+  const key = themeKeyFor(themeId, settings);
+  if (key === __appliedThemeKey) return; // already showing exactly this
   if (themeId === 'custom') {
-    const settings = (await getSavedCustomSettings()) || { effect: 'aero', buttonColor: '#a8e063', accentColor: '#a8e063', bgColor: '#6fc3f0' };
     applyCustomThemeVars(settings);
     applyCustomThemeBackground(settings);
   } else {
     applyThemeVars(themeId);
     applyThemeBackground(themeId);
   }
+  // Only count it as "applied" once the background layers existed to draw into
+  if (document.getElementById('bubbleLayer')) __appliedThemeKey = key;
+}
+
+// Runs the moment this script loads (in <head>, before anything is painted):
+// colors immediately, background effects as soon as the page body exists.
+(function applyCachedThemeEarly() {
+  const cached = readThemeCache();
+  if (!cached || !cached.themeId) return;
+  if (cached.themeId === 'custom' && !cached.custom) return;
+  if (cached.themeId === 'custom') applyCustomThemeVars(cached.custom);
+  else applyThemeVars(cached.themeId);
+  const applyBackground = () => applyFullTheme(cached.themeId, cached.custom);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', applyBackground);
+  else applyBackground();
+})();
+
+const DEFAULT_CUSTOM_SETTINGS = { effect: 'aero', buttonColor: '#a8e063', accentColor: '#a8e063', bgColor: '#6fc3f0' };
+
+// Call this on page load - applies the user's saved theme (colors + background)
+async function initPageTheme() {
+  const themeId = await getSavedThemeId();
+  const settings = themeId === 'custom' ? ((await getSavedCustomSettings()) || DEFAULT_CUSTOM_SETTINGS) : undefined;
+  writeThemeCache(themeId === 'custom' ? { themeId, custom: settings } : { themeId });
+  applyFullTheme(themeId, settings);
   return themeId;
 }
