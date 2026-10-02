@@ -298,6 +298,31 @@
   }
   .msg-edit-hint { font-size: 10.5px; color: var(--ink-soft); margin-top: 3px; }
 
+  /* ↩ replies */
+  .reply-quote {
+    display: flex; align-items: baseline; gap: 5px; max-width: 320px; margin-bottom: 4px; padding: 5px 10px;
+    border-radius: 10px; border-left: 3px solid var(--aqua-accent); cursor: pointer;
+    background: rgba(255,255,255,0.35); font-size: 12px; color: var(--ink-soft);
+    white-space: nowrap; overflow: hidden; transition: background 0.12s ease;
+  }
+  .reply-quote:hover { background: rgba(255,255,255,0.6); }
+  .reply-quote.missing { font-style: italic; cursor: default; }
+  .reply-quote-name { font-weight: 700; color: var(--ink); flex-shrink: 0; }
+  .reply-quote-text { overflow: hidden; text-overflow: ellipsis; }
+  .msg-row.mine .reply-quote { margin-left: auto; }
+  .msg-row.mine .msg-content { display: flex; flex-direction: column; align-items: flex-end; }
+  @keyframes msgFlash { 0%, 100% { background: transparent; } 30% { background: color-mix(in srgb, var(--aqua-accent) 25%, transparent); } }
+  .msg-row.flash { animation: msgFlash 1.4s ease; border-radius: 16px; }
+  .reply-bar {
+    display: none; align-items: center; gap: 8px; margin: 10px 20px -6px; padding: 7px 8px 7px 14px;
+    border-radius: 16px; border-left: 3px solid var(--aqua-accent);
+    background: rgba(255,255,255,0.45); font-size: 12.5px; color: var(--ink-soft);
+  }
+  .reply-bar.show { display: flex; }
+  .reply-bar-label { flex-shrink: 0; }
+  .reply-bar-label b { color: var(--ink); }
+  .reply-bar-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   /* 🔍 search in this conversation */
   .call-icon-btn.search { background: linear-gradient(160deg, #ffffff, #cfe6f5); font-size: 15px; }
   .chat-search {
@@ -829,6 +854,11 @@
         <button class="chat-search-btn" id="chatSearchClose" title="Close (Esc)">✕</button>
       </div>
       <div class="messages" id="messages"></div>
+      <div class="reply-bar" id="replyBar">
+        <span class="reply-bar-label">↩ Replying to <b id="replyBarName"></b></span>
+        <span class="reply-bar-text" id="replyBarText"></span>
+        <button class="chat-search-btn" id="replyBarClose" title="Cancel reply (Esc)">✕</button>
+      </div>
       <div class="composer">
         <button class="attach-btn" id="attachBtn" title="Send an image or GIF">📎</button>
         <input type="file" id="imageInput" accept="image/*" style="display:none">
@@ -1628,6 +1658,7 @@
     activeGroup = null;
     if (groupMsgChannel) { supabaseClient.removeChannel(groupMsgChannel); groupMsgChannel = null; }
     closeChatSearch();
+    cancelReply();
     markConversationRead(friend.id);
     renderFriendList();
     document.getElementById('noChat').style.display = 'none';
@@ -1686,6 +1717,7 @@
     activeFriend = null;
     activeGroup = group;
     closeChatSearch();
+    cancelReply();
     renderFriendList();
     document.getElementById('noChat').style.display = 'none';
     chatArea.style.display = 'flex';
@@ -1784,12 +1816,15 @@
            ${isText ? '<button class="msg-action-btn" data-action="edit" title="Edit">✏️</button>' : ''}
            <button class="msg-action-btn" data-action="delete" title="Delete">🗑️</button>
          </div>`
-      : '';
+      : `<div class="msg-actions">
+           <button class="msg-action-btn" data-action="reply" title="Reply">↩️</button>
+         </div>`;
 
     row.innerHTML = `
       <div class="avatar no-status" style="cursor:pointer;${avatarStyleFor(senderProfile)}">${avatarInner(senderProfile)}</div>
       <div class="msg-content">
         ${nameLabel}
+        ${m.reply_to ? '<div class="reply-quote" title="Jump to message"></div>' : ''}
         ${bodyHtml}
         <div class="msg-time">${time}${m.edited_at ? ' · <span class="msg-edited">(edited)</span>' : ''}</div>
       </div>
@@ -1799,6 +1834,14 @@
       const editBtn = row.querySelector('[data-action="edit"]');
       if (editBtn) editBtn.addEventListener('click', () => startEditMessage(row));
       row.querySelector('[data-action="delete"]').addEventListener('click', () => confirmDeleteMessage(row));
+    } else {
+      row.querySelector('[data-action="reply"]').addEventListener('click', () => startReply(row.__msg));
+    }
+    if (m.reply_to) {
+      const quote = row.querySelector('.reply-quote');
+      quote.dataset.replyTo = String(m.reply_to);
+      fillReplyQuote(quote, m.reply_to);
+      quote.addEventListener('click', () => jumpToMessage(m.reply_to));
     }
     if (isText) row.querySelector('.msg-bubble').textContent = m.content;
     if (!invite && isImageUrl(m.content)) {
@@ -1830,13 +1873,15 @@
     const old = row.__msg || {};
     if (m.deleted_at) {
       row.classList.add('removing');
-      setTimeout(() => row.remove(), 250);
+      setTimeout(() => { row.remove(); refreshReplyQuotes(m.id); }, 250);
+      if (replyingTo && String(replyingTo.id) === String(m.id)) cancelReply();
       return;
     }
     // Ignore updates that don't change what's shown (e.g. being marked as read)
     if (old.content === m.content && old.edited_at === m.edited_at) { row.__msg = m; return; }
     if (row.classList.contains('editing')) return; // don't yank the box out from under me
     row.replaceWith(buildMessageRow(m, false));
+    refreshReplyQuotes(m.id); // replies to it show the new text
     if (chatSearchQuery) runChatSearch(chatSearchQuery, true);
   }
 
@@ -1857,7 +1902,11 @@
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
 
-    const finish = () => { row.classList.remove('editing'); row.replaceWith(buildMessageRow(row.__msg, false)); };
+    const finish = () => {
+      row.classList.remove('editing');
+      row.replaceWith(buildMessageRow(row.__msg, false));
+      refreshReplyQuotes(row.__msg.id);
+    };
     input.addEventListener('keydown', async e => {
       if (e.key === 'Escape') { e.stopPropagation(); finish(); return; }
       if (e.key !== 'Enter') return;
@@ -2128,15 +2177,95 @@
     const text = input.value.trim();
     if (!text || (!activeFriend && !activeGroup)) return;
     input.value = '';
-    await sendContent(text);
+    const reply = replyingTo;
+    try {
+      await sendContent(text);
+    } catch (err) {
+      input.value = text; // give their message back so it isn't lost
+      if (reply) startReply(reply);
+      playSound('error.mp3', 0.6);
+    }
   }
 
   async function sendContent(text) {
-    if (activeGroup) {
-      await supabaseClient.from('group_messages').insert({ group_id: activeGroup.id, sender_id: me.id, content: text });
-    } else if (activeFriend) {
-      await supabaseClient.from('messages').insert({ sender_id: me.id, receiver_id: activeFriend.id, content: text });
+    const row = activeGroup
+      ? { table: 'group_messages', data: { group_id: activeGroup.id, sender_id: me.id, content: text } }
+      : activeFriend ? { table: 'messages', data: { sender_id: me.id, receiver_id: activeFriend.id, content: text } } : null;
+    if (!row) return;
+    if (replyingTo) row.data.reply_to = String(replyingTo.id);
+    cancelReply();
+    let { error } = await supabaseClient.from(row.table).insert(row.data);
+    if (error && row.data.reply_to && /reply_to/i.test(error.message)) {
+      // message-replies.sql not run yet - send it as a normal message instead of losing it
+      delete row.data.reply_to;
+      ({ error } = await supabaseClient.from(row.table).insert(row.data));
     }
+    if (error) throw error;
+  }
+
+  // ---------- Replies ----------
+  let replyingTo = null; // the message (row.__msg) I'm replying to
+
+  // Short one-line preview of a message for reply quotes
+  function messageSnippet(m) {
+    if (!m) return null;
+    if (parseInviteLink(m.content)) return '✉️ Group invite';
+    if (isImageUrl(m.content)) return '🖼️ Image';
+    return m.content.length > 90 ? m.content.slice(0, 90) + '…' : m.content;
+  }
+  function senderNameFor(m) {
+    if (m.sender_id === me.id) return 'You';
+    const p = activeGroup ? activeGroupMembers[m.sender_id] : activeFriend;
+    return (p && (p.display_name || p.username)) || 'Someone';
+  }
+
+  function startReply(m) {
+    replyingTo = m;
+    const container = document.getElementById('messages');
+    const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
+    document.getElementById('replyBarName').textContent = senderNameFor(m);
+    document.getElementById('replyBarText').textContent = messageSnippet(m);
+    document.getElementById('replyBar').classList.add('show');
+    if (wasAtBottom) container.scrollTop = container.scrollHeight; // the bar took some space - stay pinned to the newest message
+    document.getElementById('msgInput').focus();
+  }
+  function cancelReply() {
+    replyingTo = null;
+    document.getElementById('replyBar').classList.remove('show');
+  }
+  document.getElementById('replyBarClose').addEventListener('click', cancelReply);
+
+  // Fills in a reply's quote from the original (if it's still loaded and not deleted)
+  function fillReplyQuote(quoteEl, replyToId) {
+    const originalRow = messageRowById(replyToId);
+    const original = originalRow && originalRow.__msg;
+    quoteEl.innerHTML = '';
+    const name = document.createElement('span');
+    name.className = 'reply-quote-name';
+    const text = document.createElement('span');
+    text.className = 'reply-quote-text';
+    if (original) {
+      name.textContent = senderNameFor(original);
+      text.textContent = messageSnippet(original);
+      quoteEl.classList.remove('missing');
+    } else {
+      text.textContent = 'Original message was deleted';
+      quoteEl.classList.add('missing');
+    }
+    quoteEl.append('↩ ', name, text);
+  }
+  function refreshReplyQuotes(originalId) {
+    document.querySelectorAll('#messages .reply-quote').forEach(q => {
+      if (q.dataset.replyTo === String(originalId)) fillReplyQuote(q, originalId);
+    });
+  }
+  function jumpToMessage(id) {
+    const row = messageRowById(id);
+    if (!row) return;
+    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    row.classList.remove('flash');
+    void row.offsetWidth; // restart the animation
+    row.classList.add('flash');
   }
 
   // ---------- Favorite GIFs ----------
@@ -2245,7 +2374,7 @@
       item.append(img, star);
       item.addEventListener('click', () => {
         if (!activeFriend && !activeGroup) return;
-        sendContent(g.full);
+        sendContent(g.full).catch(() => playSound('error.mp3', 0.6));
         closePicker();
       });
       grid.appendChild(item);
@@ -2284,7 +2413,7 @@
       item.append(img, remove);
       item.addEventListener('click', () => {
         if (!activeFriend && !activeGroup) return;
-        sendContent(url);
+        sendContent(url).catch(() => playSound('error.mp3', 0.6));
         closePicker();
       });
       grid.appendChild(item);
@@ -2362,7 +2491,11 @@
   document.addEventListener('click', e => {
     if (!e.target.closest('#picker') && !e.target.closest('#pickerBtn')) closePicker();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closePicker(); });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('picker').classList.contains('show')) closePicker();
+    else if (replyingTo) cancelReply();
+  });
 
   function subscribeToMessages() {
     supabaseClient
@@ -2437,11 +2570,7 @@
       if (uploadError) throw uploadError;
 
       const { data: urlData } = supabaseClient.storage.from('chat-uploads').getPublicUrl(path);
-      if (activeGroup) {
-        await supabaseClient.from('group_messages').insert({ group_id: activeGroup.id, sender_id: me.id, content: urlData.publicUrl });
-      } else {
-        await supabaseClient.from('messages').insert({ sender_id: me.id, receiver_id: activeFriend.id, content: urlData.publicUrl });
-      }
+      await sendContent(urlData.publicUrl);
     } catch (err) {
       alert('Could not send image: ' + err.message);
     } finally {
