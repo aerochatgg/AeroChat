@@ -10,6 +10,7 @@
 <script src="supabase-config.js"></script>
 <script src="sounds.js"></script>
 <script src="theme-engine.js"></script>
+<script src="desktop-download.js"></script>
 <style>
   :root {
     --sky-top: #bfe9ff;
@@ -151,6 +152,14 @@
   }
   .unread-note.show { visibility: visible; }
 
+  .home-footer { position: relative; z-index: 2; flex-shrink: 0; text-align: center; padding: 0 20px 18px; display: none; }
+  .home-footer.show { display: block; }
+  .home-footer a {
+    color: #fff; font-size: 13px; font-weight: 600; text-decoration: none; opacity: 0.85;
+    text-shadow: 0 1px 4px rgba(10,60,100,0.45);
+  }
+  .home-footer a:hover { opacity: 1; text-decoration: underline; }
+
   @keyframes riseIn {
     from { opacity: 0; transform: translateY(26px); }
     to { opacity: 1; transform: translateY(0); }
@@ -182,7 +191,21 @@
   </div>
 </div>
 
+<div class="home-footer" id="desktopFooter">
+  <a id="desktopLink">💻 Get AeroChat Desktop</a>
+</div>
+
 <script>
+  // Small "get the desktop app" link (hidden inside the desktop app, and for Macs until there's a Mac build)
+  (function setUpDesktopLink() {
+    const dl = desktopDownloadFor();
+    if (IS_DESKTOP_APP || !dl.url) return;
+    const link = document.getElementById('desktopLink');
+    link.href = dl.url;
+    link.textContent = `💻 Get AeroChat Desktop ${dl.label}`;
+    document.getElementById('desktopFooter').classList.add('show');
+  })();
+
   async function init() {
     const { data: { session } } = await supabaseClient.auth.getSession();
     if (!session) { window.location.href = 'index.html'; return; }
