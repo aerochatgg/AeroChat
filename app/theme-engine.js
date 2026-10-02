@@ -298,15 +298,15 @@ async function saveAppearance(a) {
     .theme-fish span { display: inline-block; filter: drop-shadow(0 2px 4px rgba(0,40,80,0.3)); }
     @keyframes themeSwim { from { transform: translateX(-10vw); } to { transform: translateX(110vw); } }
 
-    html[data-theme="dorfic"] .glass, html[data-effect="dorfic"] .glass { position: relative; overflow: hidden; }
-    html[data-theme="dorfic"] .glass::before, html[data-effect="dorfic"] .glass::before {
-      content: ""; position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
-      background: linear-gradient(120deg, transparent, rgba(255,255,255,0.7), transparent);
-      transform: skewX(-20deg);
+    /* DORFic shine: a highlight painted into the glass's own background and slid across.
+       (An overlay element would need overflow:hidden on the panel, which stops it scrolling.) */
+    html[data-theme="dorfic"] .glass, html[data-effect="dorfic"] .glass {
+      background-image: linear-gradient(115deg, transparent 38%, rgba(255,255,255,0.7) 50%, transparent 62%);
+      background-size: 300% 100%;
+      background-repeat: no-repeat;
       animation: themeShineSweep 4.5s ease-in-out infinite;
-      pointer-events: none;
     }
-    @keyframes themeShineSweep { 0% { left: -60%; } 40% { left: 130%; } 100% { left: 130%; } }
+    @keyframes themeShineSweep { 0% { background-position: 110% 0; } 40% { background-position: -10% 0; } 100% { background-position: -10% 0; } }
 
     .theme-square {
       position: absolute; bottom: -140px;
