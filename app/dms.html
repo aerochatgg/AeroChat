@@ -4,6 +4,16 @@
 <meta charset="UTF-8">
 <title>AeroChat - DMs</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+  // During a call, other pages open in a frame on top of this one (so the call
+  // keeps running). If one of them tries to come back to the chat page, don't
+  // start a second copy inside the frame - tell the real one to close the frame.
+  if (window.top !== window) {
+    window.__aeroEmbeddedStop = true;
+    window.top.postMessage({ type: 'aero-back-to-chat', search: location.search }, '*');
+    document.documentElement.style.display = 'none';
+  }
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -574,6 +584,13 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
 
+  /* Home / Themes / profiles open in here during a call, so the call keeps going */
+  .embedded-page {
+    display: none; position: fixed; inset: 0; z-index: 65; width: 100%; height: 100%;
+    border: none; background: var(--sky-mid);
+  }
+  .embedded-page.show { display: block; }
+
   .minimized-call-pill {
     position: fixed; bottom: 22px; right: 22px; z-index: 70;
     display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 8px;
@@ -804,11 +821,12 @@
 </head>
 <body>
 
+<iframe class="embedded-page" id="embeddedPage" title="AeroChat"></iframe>
 <div class="seaweed-layer" id="seaweedLayer"></div>
 <div class="bubble-layer" id="bubbleLayer"></div>
 
 <div class="topbar">
-  <a class="pill-nav" href="home.html">⌂ Home</a>
+  <a class="pill-nav" href="home.html" id="homeNavLink">⌂ Home</a>
   <div class="topbar-right">
     <div class="me-pill"><div class="avatar" id="mePillAvatar"></div><span id="meUsername">...</span></div>
     <button class="pill-nav icon-only" id="settingsBtn" title="Settings">⚙️</button>
@@ -1265,8 +1283,52 @@
 
   function viewProfile(username) {
     if (!username) return;
-    window.location.href = 'profile.html?u=' + encodeURIComponent(username);
+    navigateTo('profile.html?u=' + encodeURIComponent(username));
   }
+
+  // ---------- Leaving this page without hanging up ----------
+  // Going to another page normally unloads this one (and any call with it).
+  // During a call we open that page in a full-window frame on top instead.
+  function navigateTo(url) {
+    if (anyCallActive()) openEmbeddedPage(url);
+    else window.location.href = url;
+  }
+
+  function openEmbeddedPage(url) {
+    hideAllOverlays();
+    // Keep the call reachable from the floating pill
+    if (!minimizedCallType) minimizeCall(callState !== 'idle' ? '1:1' : 'group');
+    const frame = document.getElementById('embeddedPage');
+    frame.src = url;
+    frame.classList.add('show');
+  }
+
+  function closeEmbeddedPage() {
+    const frame = document.getElementById('embeddedPage');
+    if (!frame.classList.contains('show')) return;
+    frame.classList.remove('show');
+    frame.src = 'about:blank';
+    initPageTheme(); // they may have changed theme/font in there
+  }
+
+  window.addEventListener('message', e => {
+    const frame = document.getElementById('embeddedPage');
+    if (!e.data || e.source !== frame.contentWindow) return; // only listen to our own frame
+    if (e.data.type === 'aero-back-to-chat') {
+      closeEmbeddedPage();
+      const params = new URLSearchParams(e.data.search || '');
+      if (params.get('settings')) openSettings();
+      if (params.get('invite')) showGroupInviteOverlay(params.get('invite'));
+    } else if (e.data.type === 'aero-leave-app') {
+      window.location.href = 'index.html'; // logged out in there
+    }
+  });
+
+  document.getElementById('homeNavLink').addEventListener('click', e => {
+    if (!anyCallActive()) return; // normal link
+    e.preventDefault();
+    navigateTo('home.html');
+  });
 
   // ---------- Desktop notifications ----------
   // Standard browser Notification API - works the same in the Electron
@@ -2956,7 +3018,7 @@
   }
   document.getElementById('settingsBtn').addEventListener('click', openSettings);
   document.getElementById('themesLinkBtn').addEventListener('click', () => {
-    window.location.href = 'themes.html';
+    navigateTo('themes.html');
   });
   document.getElementById('viewProfileBtn').addEventListener('click', () => {
     viewProfile(me.username);
@@ -3153,6 +3215,7 @@
   const ALL_OVERLAYS = ['outgoingOverlay', 'incomingOverlay', 'inCallOverlay', 'settingsOverlay', 'groupInviteOverlay', 'leaveGroupOverlay',
     'groupIncomingOverlay', 'groupCallOverlay', 'groupSettingsOverlay', 'removeMemberOverlay', 'deleteMessageOverlay'];
   function showOverlay(id) {
+    closeEmbeddedPage(); // popups (like an incoming call) must never hide behind another page
     ALL_OVERLAYS.forEach(o => {
       document.getElementById(o).classList.toggle('show', o === id);
     });
@@ -3528,6 +3591,7 @@
 
   function restoreCall() {
     if (!minimizedCallType) return;
+    closeEmbeddedPage();
     showOverlay(minimizedCallType === '1:1' ? 'inCallOverlay' : 'groupCallOverlay');
     document.getElementById('minimizedCallPill').style.display = 'none';
     minimizedCallType = null;
@@ -4070,7 +4134,7 @@
     myChannel.subscribe();
   }
 
-  init().then(() => subscribeToCallSignals());
+  if (!window.__aeroEmbeddedStop) init().then(() => subscribeToCallSignals());
 </script>
 
 </body>

@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <title>AeroChat - Chat like it's 2008</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+  // Logged out from a page that was open on top of a call - leave the whole app, not just the frame
+  if (window.top !== window) window.top.postMessage({ type: 'aero-leave-app' }, '*');
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
