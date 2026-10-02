@@ -161,6 +161,105 @@ async function saveFontId(fontId) {
   } catch (e) {}
 }
 
+// ---------- Appearance: message density, corner roundness, effect intensity ----------
+// Saved as one object on the profile (profiles.appearance) and cached on the device.
+const DENSITY_PRESETS = {
+  compact:     { spacing: 3,  bubble: 0.6,  avatar: 22, text: 13.5 },
+  comfortable: { spacing: 12, bubble: 1,    avatar: 32, text: 14.5 }, // the original look
+  cozy:        { spacing: 22, bubble: 1.35, avatar: 44, text: 16 }
+};
+const DEFAULT_APPEARANCE = { density: 'comfortable', customDensity: null, roundness: 1, effects: {} };
+let currentAppearance = { ...DEFAULT_APPEARANCE };
+
+function normalizeAppearance(a) {
+  return { ...DEFAULT_APPEARANCE, ...(a || {}), effects: { ...((a && a.effects) || {}) } };
+}
+function densityValues(a) {
+  if (a.density === 'custom' && a.customDensity) return { ...DENSITY_PRESETS.comfortable, ...a.customDensity };
+  return DENSITY_PRESETS[a.density] || DENSITY_PRESETS.comfortable;
+}
+
+// Message sizes are CSS variables the chat pages read (with the old look as fallback)
+function applyDensityVars(a) {
+  const d = densityValues(a);
+  const root = document.documentElement.style;
+  root.setProperty('--msg-gap', d.spacing + 'px');
+  root.setProperty('--msg-pad-y', (10 * d.bubble).toFixed(1) + 'px');
+  root.setProperty('--msg-pad-x', (14 * d.bubble).toFixed(1) + 'px');
+  root.setProperty('--msg-avatar', d.avatar + 'px');
+  root.setProperty('--msg-font', d.text + 'px');
+}
+
+// Corner roundness: every page hard-codes its own corner sizes, so instead of
+// editing hundreds of rules we scale the px corner values in the page's
+// stylesheets. % corners (circles like avatars and status dots) stay round.
+const RADIUS_PROPS = ['border-radius', 'border-top-left-radius', 'border-top-right-radius', 'border-bottom-left-radius', 'border-bottom-right-radius'];
+const __radiusOriginals = new WeakMap(); // rule -> { prop: original value }
+let __appliedRoundness = 1;
+
+function scaleRadiusValue(value, k) {
+  return value.replace(/(\d*\.?\d+)px/g, (_, n) => {
+    const px = parseFloat(n);
+    if (px >= 100) return (k >= 1 ? px : 30 * k) + 'px'; // "pill" shapes ease into rounded rectangles
+    return (px * k).toFixed(2) + 'px';
+  });
+}
+function scaleRadiusRules(rules, k) {
+  for (const rule of rules) {
+    if (rule.cssRules && !rule.style) { scaleRadiusRules(rule.cssRules, k); continue; }
+    if (!rule.style) continue;
+    let orig = __radiusOriginals.get(rule);
+    if (!orig) {
+      orig = {};
+      // the shorthand covers all four corners; otherwise look at individual corners
+      const shorthand = rule.style.getPropertyValue('border-radius');
+      if (shorthand) orig['border-radius'] = shorthand;
+      else RADIUS_PROPS.slice(1).forEach(p => { const v = rule.style.getPropertyValue(p); if (v) orig[p] = v; });
+      __radiusOriginals.set(rule, orig);
+    }
+    for (const [p, v] of Object.entries(orig)) {
+      rule.style.setProperty(p, k === 1 ? v : scaleRadiusValue(v, k), rule.style.getPropertyPriority(p));
+    }
+  }
+}
+function applyRoundness(k) {
+  k = Number.isFinite(k) ? k : 1;
+  if (k === 1 && __appliedRoundness === 1) return; // nothing to change or undo
+  for (const sheet of document.styleSheets) {
+    try { scaleRadiusRules(sheet.cssRules, k); } catch (e) { /* font stylesheets from other sites can't be read - they have no corners anyway */ }
+  }
+  __appliedRoundness = k;
+}
+
+function applyAppearance(a) {
+  currentAppearance = normalizeAppearance(a);
+  applyDensityVars(currentAppearance);
+  const run = () => applyRoundness(currentAppearance.roundness);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run, { once: true });
+  else run();
+}
+
+async function getSavedAppearance() {
+  try {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session) return null;
+    const { data, error } = await supabaseClient.from('profiles').select('appearance').eq('id', session.user.id).single();
+    if (error) return null; // column not added yet
+    return normalizeAppearance(data && data.appearance);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function saveAppearance(a) {
+  writeThemeCache({ appearance: a });
+  try {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session) return;
+    await supabaseClient.from('profiles').update({ appearance: a }).eq('id', session.user.id);
+  } catch (e) {}
+}
+
 // ---------- Inject the CSS these effects need (once, on load) ----------
 (function injectThemeCss() {
   const css = `
@@ -298,16 +397,38 @@ function applyCustomThemeVars(settings) {
 
 function applyCustomThemeBackground(settings) {
   const effect = EFFECT_PRESETS[settings.effect] || EFFECT_PRESETS.aero;
+  spawnBackground(effect.background);
+}
+
+// Draws a theme's background effects, with the user's intensity sliders
+// (from the theme editor) layered over the theme's own numbers.
+function spawnBackground(baseBg) {
   const bubbleLayer = document.getElementById('bubbleLayer');
   const seaweedLayer = document.getElementById('seaweedLayer');
   clearThemeBackground();
   if (!bubbleLayer) return;
-  const bg = effect.background;
-  if (bg.seaweed && seaweedLayer) spawnSeaweedInto(seaweedLayer, bg.seaweed, bg.seaweedColor, bg.seaweedOpacity);
-  if (bg.bubbles) spawnBubblesInto(bubbleLayer, bg.bubbles);
-  if (bg.rings) spawnRingLoop(bubbleLayer);
-  if (bg.fish) spawnFishInto(bubbleLayer, bg.fish);
-  if (bg.squares) spawnSquaresInto(bubbleLayer, bg.squares);
+  const bg = baseBg || {};
+  const fx = (currentAppearance && currentAppearance.effects) || {};
+  // An override only applies to effects this theme actually has
+  const pick = (key, base) => (base && fx[key] !== undefined && fx[key] !== null) ? fx[key] : base;
+  const speed = key => fx[key] || 1;
+  const seaweed = pick('seaweed', bg.seaweed);
+  const bubbles = pick('bubbles', bg.bubbles);
+  const fish = pick('fish', bg.fish);
+  const squares = pick('squares', bg.squares);
+  const ringRate = bg.rings ? pick('ringRate', 1) : 0;
+  if (seaweed && seaweedLayer) spawnSeaweedInto(seaweedLayer, seaweed, bg.seaweedColor || '#0a4d8c', bg.seaweedOpacity ?? 0.35);
+  if (bg.sunRays) spawnSunRays(bubbleLayer);
+  if (bubbles) spawnBubblesInto(bubbleLayer, bubbles, speed('bubbleSpeed'));
+  if (ringRate) spawnRingLoop(bubbleLayer, ringRate);
+  if (fish) spawnFishInto(bubbleLayer, fish, speed('fishSpeed'));
+  if (squares) spawnSquaresInto(bubbleLayer, squares, speed('squareSpeed'));
+}
+
+// The theme's own background numbers (before any sliders) - used by the theme editor
+function baseBackgroundFor(themeId, settings) {
+  if (themeId === 'custom') return (EFFECT_PRESETS[(settings || {}).effect] || EFFECT_PRESETS.aero).background;
+  return (THEMES[themeId] || THEMES.aero).background || {};
 }
 
 async function getSavedCustomSettings() {
@@ -361,7 +482,7 @@ function clearThemeBackground() {
   if (__themeRingInterval) { clearInterval(__themeRingInterval); __themeRingInterval = null; }
 }
 
-function spawnBubblesInto(layer, count) {
+function spawnBubblesInto(layer, count, speed = 1) {
   for (let i = 0; i < count; i++) {
     const b = document.createElement('div');
     b.className = 'bubble';
@@ -369,8 +490,8 @@ function spawnBubblesInto(layer, count) {
     b.style.width = size + 'px';
     b.style.height = size + 'px';
     b.style.left = Math.random() * 100 + 'vw';
-    b.style.animationDuration = (13 + Math.random() * 16) + 's';
-    b.style.animationDelay = (Math.random() * -20) + 's';
+    b.style.animationDuration = ((13 + Math.random() * 16) / speed) + 's';
+    b.style.animationDelay = ((Math.random() * -20) / speed) + 's';
     layer.appendChild(b);
     if (typeof wireBubblePopSound === 'function') wireBubblePopSound(b);
   }
@@ -397,7 +518,7 @@ function spawnSeaweedInto(layer, count, color, opacity) {
   }
 }
 
-function spawnRingLoop(layer) {
+function spawnRingLoop(layer, rate = 1) {
   function spawnOne() {
     const ring = document.createElement('div');
     ring.className = 'theme-ring';
@@ -410,7 +531,7 @@ function spawnRingLoop(layer) {
     setTimeout(() => ring.remove(), 1700);
   }
   spawnOne();
-  __themeRingInterval = setInterval(spawnOne, 550 + Math.random() * 400);
+  __themeRingInterval = setInterval(spawnOne, (550 + Math.random() * 400) / rate);
 }
 
 function spawnSunRays(layer) {
@@ -419,13 +540,13 @@ function spawnSunRays(layer) {
   layer.appendChild(rays);
 }
 
-function spawnFishInto(layer, count) {
+function spawnFishInto(layer, count, speed = 1) {
   for (let i = 0; i < count; i++) {
     const wrap = document.createElement('div');
     wrap.className = 'theme-fish';
     const top = 10 + Math.random() * 70;
-    const duration = 14 + Math.random() * 14;
-    const delay = Math.random() * -20;
+    const duration = (14 + Math.random() * 14) / speed;
+    const delay = (Math.random() * -20) / speed;
     const reverse = Math.random() < 0.5;
     wrap.style.top = top + 'vh';
     wrap.style.animationDuration = duration + 's';
@@ -440,7 +561,7 @@ function spawnFishInto(layer, count) {
   }
 }
 
-function spawnSquaresInto(layer, count) {
+function spawnSquaresInto(layer, count, speed = 1) {
   for (let i = 0; i < count; i++) {
     const sq = document.createElement('div');
     sq.className = 'theme-square';
@@ -448,25 +569,14 @@ function spawnSquaresInto(layer, count) {
     sq.style.width = size + 'px';
     sq.style.height = size + 'px';
     sq.style.left = Math.random() * 100 + 'vw';
-    sq.style.animationDuration = (20 + Math.random() * 22) + 's'; // slow, drifting
-    sq.style.animationDelay = (Math.random() * -30) + 's';
+    sq.style.animationDuration = ((20 + Math.random() * 22) / speed) + 's'; // slow, drifting
+    sq.style.animationDelay = ((Math.random() * -30) / speed) + 's';
     layer.appendChild(sq);
   }
 }
 
 function applyThemeBackground(themeId) {
-  const theme = THEMES[themeId] || THEMES.aero;
-  const bubbleLayer = document.getElementById('bubbleLayer');
-  const seaweedLayer = document.getElementById('seaweedLayer');
-  clearThemeBackground();
-  if (!bubbleLayer) return;
-  const bg = theme.background || {};
-  if (bg.seaweed && seaweedLayer) spawnSeaweedInto(seaweedLayer, bg.seaweed, bg.seaweedColor || '#0a4d8c', bg.seaweedOpacity ?? 0.35);
-  if (bg.sunRays) spawnSunRays(bubbleLayer);
-  if (bg.bubbles) spawnBubblesInto(bubbleLayer, bg.bubbles);
-  if (bg.rings) spawnRingLoop(bubbleLayer);
-  if (bg.fish) spawnFishInto(bubbleLayer, bg.fish);
-  if (bg.squares) spawnSquaresInto(bubbleLayer, bg.squares);
+  spawnBackground((THEMES[themeId] || THEMES.aero).background);
 }
 
 async function getSavedThemeId() {
@@ -506,7 +616,8 @@ function writeThemeCache(changes) {
   } catch (e) {}
 }
 function themeKeyFor(themeId, settings) {
-  return themeId === 'custom' ? 'custom:' + JSON.stringify(settings) : themeId;
+  const base = themeId === 'custom' ? 'custom:' + JSON.stringify(settings) : themeId;
+  return base + '|' + JSON.stringify(currentAppearance.effects || {}); // effect sliders change the background too
 }
 
 function applyFullTheme(themeId, settings) {
@@ -528,6 +639,7 @@ function applyFullTheme(themeId, settings) {
 (function applyCachedThemeEarly() {
   const cached = readThemeCache();
   if (cached && cached.font) applyFont(cached.font);
+  if (cached && cached.appearance) applyAppearance(cached.appearance);
   if (!cached || !cached.themeId) return;
   if (cached.themeId === 'custom' && !cached.custom) return;
   if (cached.themeId === 'custom') applyCustomThemeVars(cached.custom);
@@ -546,7 +658,13 @@ async function initPageTheme() {
     writeThemeCache({ font: fontId });
     applyFont(fontId);
   });
+  const appearancePromise = getSavedAppearance();
   const themeId = await getSavedThemeId();
+  const savedAppearance = await appearancePromise;
+  if (savedAppearance) {
+    writeThemeCache({ appearance: savedAppearance });
+    applyAppearance(savedAppearance);
+  }
   const settings = themeId === 'custom' ? ((await getSavedCustomSettings()) || DEFAULT_CUSTOM_SETTINGS) : undefined;
   writeThemeCache(themeId === 'custom' ? { themeId, custom: settings } : { themeId });
   applyFullTheme(themeId, settings);

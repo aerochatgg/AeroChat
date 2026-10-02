@@ -144,11 +144,14 @@
   .mock-avatar::after { content: ""; position: absolute; width: 10px; height: 10px; border-radius: 50%; background: #bfe9ff; border: 2px solid #eef9ff; bottom: -1px; right: -1px; }
   .mock-name { font-weight: 700; font-size: 14.5px; }
 
-  .mock-messages { display: flex; flex-direction: column; gap: 10px; max-width: 380px; }
-  .mock-msg-row { display: flex; gap: 8px; max-width: 80%; }
+  /* same --msg-* sizes as the real chat, so density changes preview live */
+  .mock-messages { display: flex; flex-direction: column; gap: var(--msg-gap, 12px); max-width: 380px; }
+  .mock-msg-row { display: flex; gap: calc(var(--msg-avatar, 32px) * 0.3); max-width: 80%; align-items: flex-start; }
   .mock-msg-row.mine { align-self: flex-end; flex-direction: row-reverse; }
+  .mock-msg-avatar { width: var(--msg-avatar, 32px); height: var(--msg-avatar, 32px); font-size: calc(var(--msg-avatar, 32px) * 0.44); }
+  .mock-msg-avatar::after { display: none; }
   .mock-bubble {
-    padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.4;
+    padding: var(--msg-pad-y, 10px) var(--msg-pad-x, 14px); border-radius: 16px; font-size: var(--msg-font, 14.5px); line-height: 1.4;
     background: var(--msg-bg); border: 1px solid var(--msg-border);
     box-shadow: 0 3px 10px rgba(10,60,100,0.12), inset 0 1px 0 rgba(255,255,255,0.5);
     transition: background 0.4s ease, border-color 0.4s ease;
@@ -169,6 +172,28 @@
     cursor: pointer; outline: none;
   }
   .mock-color { width: 100%; height: 36px; border: none; border-radius: 10px; cursor: pointer; background: none; }
+
+  .seg-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .seg-btn {
+    border: 2px solid transparent; cursor: pointer; padding: 8px 16px; border-radius: 999px;
+    background: rgba(255,255,255,0.45); color: var(--ink);
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 13.5px;
+    transition: background 0.15s ease, transform 0.12s ease;
+  }
+  .seg-btn:hover { background: rgba(255,255,255,0.65); }
+  .seg-btn:active { transform: scale(0.96); }
+  .seg-btn.active { border-color: var(--aqua-accent); background: rgba(255,255,255,0.8); }
+  .slider-grid { display: grid; grid-template-columns: 150px 1fr 48px; align-items: center; gap: 10px 12px; max-width: 520px; }
+  .slider-grid label { font-weight: 700; font-size: 13.5px; }
+  .appearance-slider { width: 100%; accent-color: var(--aqua-accent); }
+  .slider-value { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); text-align: right; }
+  .text-btn {
+    border: none; background: none; cursor: pointer; margin-left: 8px; padding: 0;
+    color: var(--aqua-accent); font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 11.5px;
+    text-transform: none; letter-spacing: 0;
+  }
+  .text-btn:hover { text-decoration: underline; }
+  .effects-empty { grid-column: 1 / -1; color: var(--ink-soft); font-size: 13px; }
 </style>
 </head>
 <body>
@@ -213,6 +238,34 @@
     </div>
 
     <div class="preview-block">
+      <div class="preview-block-label">Message Density</div>
+      <div class="seg-row" id="densityPresets">
+        <button class="seg-btn" data-density="compact">Compact</button>
+        <button class="seg-btn" data-density="comfortable">Comfortable</button>
+        <button class="seg-btn" data-density="cozy">Cozy</button>
+        <button class="seg-btn" data-density="custom">Custom</button>
+      </div>
+      <div class="slider-grid">
+        <label>↕️ Spacing</label><input type="range" class="appearance-slider" data-density-key="spacing" min="0" max="40" step="1"><span class="slider-value"></span>
+        <label>💬 Bubble size</label><input type="range" class="appearance-slider" data-density-key="bubble" min="0.4" max="2" step="0.05"><span class="slider-value"></span>
+        <label>🙂 Avatar size</label><input type="range" class="appearance-slider" data-density-key="avatar" min="16" max="64" step="1"><span class="slider-value"></span>
+        <label>🔤 Text size</label><input type="range" class="appearance-slider" data-density-key="text" min="11" max="22" step="0.5"><span class="slider-value"></span>
+      </div>
+    </div>
+
+    <div class="preview-block">
+      <div class="preview-block-label">Corners</div>
+      <div class="slider-grid">
+        <label>◻️ Sharp ↔ Round ◯</label><input type="range" class="appearance-slider" id="roundnessSlider" min="0" max="2" step="0.05"><span class="slider-value" id="roundnessValue"></span>
+      </div>
+    </div>
+
+    <div class="preview-block">
+      <div class="preview-block-label">Effect Intensity <button class="text-btn" id="resetEffectsBtn">Reset to theme default</button></div>
+      <div class="slider-grid" id="effectSliders"></div>
+    </div>
+
+    <div class="preview-block">
       <div class="preview-block-label">Friend List</div>
       <div class="mock-friend-list">
         <div class="mock-row">
@@ -230,10 +283,16 @@
       <div class="preview-block-label">Messages</div>
       <div class="mock-messages">
         <div class="mock-msg-row">
+          <div class="mock-avatar mock-msg-avatar" style="background:linear-gradient(160deg,#7fe3d0,#1fa9a0)">R</div>
           <div class="mock-bubble">hey! check out this new theme 👀</div>
         </div>
         <div class="mock-msg-row mine">
+          <div class="mock-avatar mock-msg-avatar" style="background:linear-gradient(160deg,#c9a8ff,#7a5af0)">Y</div>
           <div class="mock-bubble">oh this looks awesome</div>
+        </div>
+        <div class="mock-msg-row">
+          <div class="mock-avatar mock-msg-avatar" style="background:linear-gradient(160deg,#7fe3d0,#1fa9a0)">R</div>
+          <div class="mock-bubble">try the sliders above 🫧</div>
         </div>
       </div>
     </div>
@@ -275,6 +334,111 @@
     customRow.addEventListener('click', () => selectTheme('custom'));
     container.appendChild(customRow);
   }
+
+  // ---------- Density / corners / effect intensity ----------
+  let appearance = normalizeAppearance((readThemeCache() || {}).appearance);
+
+  // Sliders for each background effect - only the ones the current theme uses are shown
+  const EFFECT_CONTROLS = [
+    { key: 'bubbles',     label: '🫧 Bubbles',         base: bg => bg.bubbles,        min: 0,    max: 40, step: 1 },
+    { key: 'bubbleSpeed', label: '🫧 Bubble speed',    base: bg => bg.bubbles && 1,   min: 0.25, max: 3,  step: 0.25, unit: '×' },
+    { key: 'seaweed',     label: '🌿 Seaweed',         base: bg => bg.seaweed,        min: 0,    max: 20, step: 1 },
+    { key: 'fish',        label: '🐟 Fish',            base: bg => bg.fish,           min: 0,    max: 20, step: 1 },
+    { key: 'fishSpeed',   label: '🐟 Fish speed',      base: bg => bg.fish && 1,      min: 0.25, max: 3,  step: 0.25, unit: '×' },
+    { key: 'squares',     label: '◻️ Squares',         base: bg => bg.squares,        min: 0,    max: 30, step: 1 },
+    { key: 'squareSpeed', label: '◻️ Square speed',    base: bg => bg.squares && 1,   min: 0.25, max: 3,  step: 0.25, unit: '×' },
+    { key: 'ringRate',    label: '⭕ Ring frequency',  base: bg => bg.rings && 1,     min: 0,    max: 3,  step: 0.25, unit: '×' }
+  ];
+
+  let saveAppearanceTimer = null;
+  let backgroundRedrawTimer = null;
+  function appearanceChanged({ redrawBackground } = {}) {
+    applyAppearance(appearance);
+    renderAppearanceControls();
+    clearTimeout(saveAppearanceTimer);
+    saveAppearanceTimer = setTimeout(() => saveAppearance(appearance), 400);
+    if (redrawBackground) {
+      clearTimeout(backgroundRedrawTimer);
+      backgroundRedrawTimer = setTimeout(() => {
+        if (currentThemeId === 'custom') applyCustomThemeBackground(customSettings);
+        else applyThemeBackground(currentThemeId);
+      }, 150);
+    }
+  }
+
+  function renderAppearanceControls() {
+    document.querySelectorAll('#densityPresets .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.density === appearance.density));
+    const d = densityValues(appearance);
+    document.querySelectorAll('[data-density-key]').forEach(slider => {
+      const v = d[slider.dataset.densityKey];
+      slider.value = v;
+      slider.nextElementSibling.textContent = slider.dataset.densityKey === 'bubble' ? Math.round(v * 100) + '%' : v + 'px';
+    });
+    document.getElementById('roundnessSlider').value = appearance.roundness;
+    document.getElementById('roundnessValue').textContent = Math.round(appearance.roundness * 100) + '%';
+    renderEffectSliders();
+  }
+
+  function renderEffectSliders() {
+    const grid = document.getElementById('effectSliders');
+    const bg = baseBackgroundFor(currentThemeId, customSettings);
+    const controls = EFFECT_CONTROLS.filter(c => c.base(bg));
+    // rebuilding while dragging would drop the slider out of your hand - just update values then
+    if (grid.dataset.keys === controls.map(c => c.key).join(',')) {
+      controls.forEach(c => {
+        const slider = grid.querySelector(`[data-effect-key="${c.key}"]`);
+        const v = appearance.effects[c.key] ?? c.base(bg);
+        if (document.activeElement !== slider) slider.value = v;
+        slider.nextElementSibling.textContent = v + (c.unit || '');
+      });
+      return;
+    }
+    grid.dataset.keys = controls.map(c => c.key).join(',');
+    grid.innerHTML = '';
+    if (controls.length === 0) {
+      grid.innerHTML = '<div class="effects-empty">This theme has no background effects to adjust.</div>';
+      return;
+    }
+    controls.forEach(c => {
+      const label = document.createElement('label');
+      label.textContent = c.label;
+      const slider = document.createElement('input');
+      Object.assign(slider, { type: 'range', className: 'appearance-slider', min: c.min, max: c.max, step: c.step });
+      slider.dataset.effectKey = c.key;
+      const value = appearance.effects[c.key] ?? c.base(bg);
+      slider.value = value;
+      const out = document.createElement('span');
+      out.className = 'slider-value';
+      out.textContent = value + (c.unit || '');
+      slider.addEventListener('input', () => {
+        appearance.effects[c.key] = parseFloat(slider.value);
+        appearanceChanged({ redrawBackground: true });
+      });
+      grid.append(label, slider, out);
+    });
+  }
+
+  document.querySelectorAll('#densityPresets .seg-btn').forEach(btn => btn.addEventListener('click', () => {
+    if (btn.dataset.density === 'custom') {
+      appearance.customDensity = { ...densityValues(appearance) }; // start Custom from what you're looking at
+    }
+    appearance.density = btn.dataset.density;
+    appearanceChanged();
+  }));
+  document.querySelectorAll('[data-density-key]').forEach(slider => slider.addEventListener('input', () => {
+    if (appearance.density !== 'custom') appearance.customDensity = { ...densityValues(appearance) };
+    appearance.density = 'custom';
+    appearance.customDensity[slider.dataset.densityKey] = parseFloat(slider.value);
+    appearanceChanged();
+  }));
+  document.getElementById('roundnessSlider').addEventListener('input', e => {
+    appearance.roundness = parseFloat(e.target.value);
+    appearanceChanged();
+  });
+  document.getElementById('resetEffectsBtn').addEventListener('click', () => {
+    appearance.effects = {};
+    appearanceChanged({ redrawBackground: true });
+  });
 
   let currentFontId = 'aero';
 
@@ -321,6 +485,7 @@
     customSettings.effect = e.target.value;
     renderThemeRows();
     applyAndSaveCustom();
+    renderEffectSliders();
   });
   document.getElementById('customButtonColor').addEventListener('input', e => {
     customSettings.buttonColor = e.target.value;
@@ -353,6 +518,7 @@
       applyThemeBackground(id);
     }
     renderThemeRows();
+    renderEffectSliders();
     await saveThemeId(id);
   }
 
@@ -362,6 +528,9 @@
     currentThemeId = await getSavedThemeId();
     const saved = await getSavedCustomSettings();
     if (saved) customSettings = saved;
+    const savedAppearance = await getSavedAppearance();
+    if (savedAppearance) appearance = savedAppearance;
+    applyAppearance(appearance); // before the background is drawn, so effect sliders apply
     updateCustomEditorFields();
 
     if (currentThemeId === 'custom') {
@@ -373,6 +542,7 @@
       applyThemeBackground(currentThemeId);
     }
     renderThemeRows();
+    renderAppearanceControls();
 
     currentFontId = (await getSavedFontId()) || 'aero';
     applyFont(currentFontId);
@@ -380,6 +550,7 @@
   }
 
   renderFontRows();
+  renderAppearanceControls();
   init();
 </script>
 
