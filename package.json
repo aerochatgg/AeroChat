@@ -18,6 +18,7 @@
     "productName": "AeroChat",
     "files": [
       "main.js",
+      "preload.js",
       "app/**/*"
     ],
     "directories": {

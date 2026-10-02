@@ -372,6 +372,37 @@
   .call-btn.control.cam { background: linear-gradient(160deg, #6fd6ff, #1a8fd1); margin-top: 0; }
   .call-btn.control.cam.off { background: linear-gradient(160deg, #b8c4cc, #7c8894); }
   .call-btn.control.minimize { background: linear-gradient(160deg, #e8d98a, #c9a63a); }
+  .call-btn.control.screen { background: linear-gradient(160deg, #c9a8ff, #7a5af0); }
+  .call-btn.control.screen.sharing {
+    background: linear-gradient(160deg, var(--lime), var(--lime-dark));
+    box-shadow: inset 0 2px 3px rgba(255,255,255,0.6), 0 0 0 4px rgba(255,255,255,0.55), 0 4px 10px rgba(10,60,100,0.3);
+  }
+
+  /* Shared screens should show whole, not cropped or mirrored */
+  #remoteVideo.screen, #localVideo.screen, .group-tile video.screen { object-fit: contain; transform: none; background: #0b2a44; }
+  .group-tile.screen-tile { grid-column: 1 / -1; aspect-ratio: 16/9; }
+
+  .screen-picker-overlay {
+    display: none; position: fixed; inset: 0; z-index: 90;
+    align-items: center; justify-content: center;
+    background: rgba(10,60,100,0.35); backdrop-filter: blur(6px);
+  }
+  .screen-picker-overlay.show { display: flex; }
+  .screen-picker-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px;
+    max-height: 56vh; overflow-y: auto; padding: 2px;
+  }
+  .screen-source {
+    border: 2px solid transparent; border-radius: 14px; padding: 8px; cursor: pointer;
+    background: rgba(255,255,255,0.45); text-align: center;
+    transition: transform 0.12s ease, border-color 0.12s ease;
+  }
+  .screen-source:hover { transform: translateY(-2px); border-color: var(--aqua-accent); }
+  .screen-source img { width: 100%; aspect-ratio: 16/9; object-fit: contain; border-radius: 8px; background: #0b2a44; display: block; }
+  .screen-source .source-name {
+    margin-top: 6px; font-size: 12px; font-weight: 700; color: var(--ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
 
   .minimized-call-pill {
     position: fixed; bottom: 22px; right: 22px; z-index: 70;
@@ -888,6 +919,7 @@
     <div class="in-call-controls">
       <button class="call-btn control mic" id="muteBtn" title="Mute"><img id="muteIcon" src="icon-mic.png" alt="Mute"></button>
       <button class="call-btn control cam" id="toggleVideoBtn" title="Camera"><img src="icon-video.png" alt="Camera"></button>
+      <button class="call-btn control screen" id="screenShareBtn" title="Share screen">🖥️</button>
       <button class="call-btn control minimize" id="minimizeCallBtn" title="Minimize">🗕</button>
       <button class="call-btn decline" id="hangupBtn" title="Hang up">✕</button>
     </div>
@@ -931,9 +963,21 @@
     <div class="in-call-controls">
       <button class="call-btn control mic" id="groupMuteBtn" title="Mute"><img id="groupMuteIcon" src="icon-mic.png" alt="Mute"></button>
       <button class="call-btn control cam" id="groupToggleVideoBtn" title="Camera"><img src="icon-video.png" alt="Camera"></button>
+      <button class="call-btn control screen" id="groupScreenShareBtn" title="Share screen">🖥️</button>
       <button class="call-btn control minimize" id="groupMinimizeBtn" title="Minimize">🗕</button>
       <button class="call-btn decline" id="groupHangupBtn" title="Leave call">✕</button>
     </div>
+  </div>
+</div>
+
+<!-- Desktop app only: choose which screen/window to share -->
+<div class="screen-picker-overlay" id="screenPickerOverlay">
+  <div class="settings-card glass" style="width:min(640px, 92vw);">
+    <div class="settings-header">
+      <span>🖥️ Share Your Screen</span>
+      <button class="settings-close" id="screenPickerCloseBtn">✕</button>
+    </div>
+    <div class="screen-picker-grid" id="screenPickerGrid"></div>
   </div>
 </div>
 
@@ -2227,7 +2271,34 @@
     document.getElementById('newPasswordInput').value = '';
   });
 
-  const RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+  // ---------- STUN / TURN ----------
+  // STUN alone works for most home networks. TURN relays the call through a
+  // server when a direct connection is blocked (school/work/strict networks).
+  // Paste your Metered credentials URL here to turn it on, e.g.
+  // 'https://YOURAPP.metered.live/api/v1/turn/credentials?apiKey=YOUR_KEY'
+  const TURN_CREDENTIALS_URL = '';
+
+  let RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+  let rtcConfigPromise = null;
+  function loadRtcConfig() {
+    if (!TURN_CREDENTIALS_URL) return Promise.resolve();
+    if (!rtcConfigPromise) {
+      rtcConfigPromise = (async () => {
+        try {
+          const res = await fetch(TURN_CREDENTIALS_URL, { signal: AbortSignal.timeout(4000) });
+          const data = await res.json();
+          const servers = Array.isArray(data) ? data : data.iceServers;
+          if (Array.isArray(servers) && servers.length) {
+            RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, ...servers] };
+          }
+        } catch (err) {
+          console.warn('TURN credentials unavailable, using STUN only:', err);
+          rtcConfigPromise = null; // try again next call
+        }
+      })();
+    }
+    return rtcConfigPromise;
+  }
   const isDesktopApp = navigator.userAgent.toLowerCase().includes('electron');
   let selectedMicId = null;      // null = system default
   let selectedSpeakerId = null;  // null = system default
@@ -2250,6 +2321,9 @@
   let rawMicStream = null;
   let callRingTimeoutId = null;
   const CALL_RING_TIMEOUT_MS = 38400; // 38.4 seconds
+  let screenTrack = null;    // my shared screen, while sharing
+  let screenSender = null;   // the video slot my screen goes out on
+  let remoteScreenOn = false;
 
   // ---------- Group calling state ----------
   let groupCallPeers = {};          // userId -> RTCPeerConnection
@@ -2268,6 +2342,9 @@
   let groupLocalVideoOn = false;
   let groupCallMemberProfiles = {};
   let pendingGroupCallInfo = null;  // { groupId, groupName, video } while an incoming group call is ringing
+  let groupScreenTrack = null;
+  let groupScreenSenders = {};      // userId -> the video slot my screen goes out on
+  let groupParticipantScreen = {};  // userId -> bool (are they sharing?)
 
   function anyCallActive() { return callState !== 'idle' || inGroupCall; }
 
@@ -2318,6 +2395,9 @@
       if (isVideoCall) {
         remoteVideo.srcObject = e.streams[0];
         applySpeakerToElement(remoteVideo);
+      } else if (e.track.kind === 'video') {
+        // Screen share during a voice call - video only, audio keeps playing below
+        remoteVideo.srcObject = new MediaStream([e.track]);
       } else {
         remoteAudio.srcObject = e.streams[0];
         applySpeakerToElement(remoteAudio);
@@ -2368,11 +2448,13 @@
     const placeholderAvatar = document.getElementById('remotePlaceholderAvatar');
     const toggleVideoBtn = document.getElementById('toggleVideoBtn');
 
-    localWrap.style.display = (isVideoCall && localVideoOn) ? 'block' : 'none';
+    localWrap.style.display = (screenTrack || (isVideoCall && localVideoOn)) ? 'block' : 'none';
     toggleVideoBtn.style.display = isVideoCall ? 'flex' : 'none';
     toggleVideoBtn.classList.toggle('off', !localVideoOn);
+    document.getElementById('screenShareBtn').classList.toggle('sharing', !!screenTrack);
+    remoteVideo.classList.toggle('screen', remoteScreenOn);
 
-    if (isVideoCall && remoteVideoOn) {
+    if (remoteScreenOn || (isVideoCall && remoteVideoOn)) {
       remoteVideo.style.display = 'block';
       placeholder.style.display = 'none';
     } else {
@@ -2421,6 +2503,7 @@
       resetCallState();
       return;
     }
+    await loadRtcConfig();
 
     sendSignal(friend.id, { type: 'call-request', video });
     callRingTimeoutId = setTimeout(() => { if (callState === 'outgoing') endCall(true); }, CALL_RING_TIMEOUT_MS);
@@ -2439,6 +2522,7 @@
       resetCallState();
       return;
     }
+    await loadRtcConfig();
 
     pc = createPeerConnection(callPeer.id);
     localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
@@ -2477,6 +2561,12 @@
     if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
     if (rawMicStream) { rawMicStream.getTracks().forEach(t => t.stop()); rawMicStream = null; }
     if (audioCtx) { audioCtx.close(); audioCtx = null; micGainNode = null; }
+    if (screenTrack) { screenTrack.onended = null; screenTrack.stop(); screenTrack = null; }
+    screenSender = null;
+    remoteScreenOn = false;
+    document.getElementById('remoteVideo').classList.remove('screen');
+    document.getElementById('localVideo').classList.remove('screen');
+    document.getElementById('screenShareBtn').classList.remove('sharing');
     document.getElementById('remoteVideo').srcObject = null;
     document.getElementById('localVideo').srcObject = null;
     document.getElementById('remoteAudioOnly').srcObject = null;
@@ -2565,6 +2655,13 @@
     if (type === 'video-state') {
       if (!callPeer || callPeer.id !== from) return;
       remoteVideoOn = payload.enabled;
+      updateCallVisuals();
+      return;
+    }
+
+    if (type === 'screen-state') {
+      if (!callPeer || callPeer.id !== from) return;
+      remoteScreenOn = payload.enabled;
       updateCallVisuals();
       return;
     }
@@ -2661,6 +2758,106 @@
     document.getElementById('muteBtn').classList.toggle('off', !track.enabled);
     document.getElementById('muteIcon').src = track.enabled ? 'icon-mic.png' : 'icon-mic-muted.png';
   });
+  // ---------- Screen sharing ----------
+  // Browsers show their own "choose what to share" popup. The desktop app
+  // doesn't, so main.js sends us the list and we show this picker instead.
+  let screenPickPending = false;
+  if (window.aeroDesktop) {
+    window.aeroDesktop.onPickScreenSource(sources => {
+      screenPickPending = true;
+      const grid = document.getElementById('screenPickerGrid');
+      grid.innerHTML = '';
+      sources.forEach(src => {
+        const tile = document.createElement('div');
+        tile.className = 'screen-source';
+        tile.innerHTML = `<img src="${src.thumbnail}" alt=""><div class="source-name">${escapeHtml(src.name)}</div>`;
+        tile.addEventListener('click', () => finishScreenPick(src.id));
+        grid.appendChild(tile);
+      });
+      document.getElementById('screenPickerOverlay').classList.add('show');
+    });
+  }
+  function finishScreenPick(sourceId) {
+    if (!screenPickPending) return;
+    screenPickPending = false;
+    document.getElementById('screenPickerOverlay').classList.remove('show');
+    window.aeroDesktop.chooseScreenSource(sourceId);
+  }
+  document.getElementById('screenPickerCloseBtn').addEventListener('click', () => finishScreenPick(null));
+
+  async function getScreenTrack() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      alert("Screen sharing isn't supported here.");
+      return null;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 15 }, audio: false });
+      const track = stream.getVideoTracks()[0];
+      track.contentHint = 'detail'; // keep text sharp rather than smooth motion
+      return track;
+    } catch (err) {
+      // Cancelling the picker lands here too - that's not worth an error popup
+      if (!['NotAllowedError', 'AbortError'].includes(err.name)) {
+        console.warn('Screen share failed:', err);
+      }
+      return null;
+    }
+  }
+
+  // Puts my screen on a call connection: swaps it into the camera's slot if
+  // there is one, otherwise adds a new video slot (which needs a new offer).
+  async function attachScreenTrack(conn, existingSender, track, stream, sendOffer) {
+    const sender = existingSender || conn.getSenders().find(s => s.track && s.track.kind === 'video');
+    if (sender) {
+      await sender.replaceTrack(track);
+      return sender;
+    }
+    const newSender = conn.addTrack(track, stream);
+    const offer = await conn.createOffer();
+    await conn.setLocalDescription(offer);
+    sendOffer(offer);
+    return newSender;
+  }
+
+  async function startScreenShare() {
+    if (!pc || callState !== 'active' || screenTrack) return;
+    const track = await getScreenTrack();
+    if (!track) return;
+    if (!pc || callState !== 'active') { track.stop(); return; } // call ended while picking
+
+    screenTrack = track;
+    track.onended = stopScreenShare; // the browser's own "Stop sharing" button
+    screenSender = await attachScreenTrack(pc, screenSender, track, localStream,
+      offer => sendSignal(callPeer.id, { type: 'offer', sdp: offer }));
+
+    const localVideo = document.getElementById('localVideo');
+    localVideo.srcObject = new MediaStream([track]);
+    localVideo.classList.add('screen');
+    sendSignal(callPeer.id, { type: 'screen-state', enabled: true });
+    updateCallVisuals();
+  }
+
+  async function stopScreenShare() {
+    if (!screenTrack) return;
+    const track = screenTrack;
+    screenTrack = null;
+    track.onended = null;
+    track.stop();
+    // Put the camera back in its slot (video calls), or leave the slot empty
+    const camTrack = localStream ? localStream.getVideoTracks()[0] : null;
+    if (screenSender && pc) await screenSender.replaceTrack(camTrack || null);
+
+    const localVideo = document.getElementById('localVideo');
+    localVideo.classList.remove('screen');
+    localVideo.srcObject = isVideoCall ? localStream : null;
+    if (callPeer) sendSignal(callPeer.id, { type: 'screen-state', enabled: false });
+    updateCallVisuals();
+  }
+
+  document.getElementById('screenShareBtn').addEventListener('click', () => {
+    if (screenTrack) stopScreenShare(); else startScreenShare();
+  });
+
   document.getElementById('toggleVideoBtn').addEventListener('click', () => {
     if (!localStream || !isVideoCall) return;
     const track = localStream.getVideoTracks()[0];
@@ -2724,7 +2921,10 @@
     const on = userId === me.id
       ? groupLocalVideoOn
       : (groupParticipantVideo[userId] !== undefined ? groupParticipantVideo[userId] : isVideoCallMode);
-    if (isVideoCallMode && on) {
+    const sharing = userId === me.id ? !!groupScreenTrack : !!groupParticipantScreen[userId];
+    tile.classList.toggle('screen-tile', sharing);
+    video.classList.toggle('screen', sharing);
+    if (sharing || (isVideoCallMode && on)) {
       video.style.display = 'block';
       placeholder.style.display = 'none';
     } else {
@@ -2769,16 +2969,69 @@
     const pc = groupCallPeers[remoteId];
     if (pc) { pc.close(); delete groupCallPeers[remoteId]; }
     delete groupPendingCandidates[remoteId];
+    delete groupScreenSenders[remoteId];
+    delete groupParticipantScreen[remoteId];
   }
 
   async function initiateGroupPeer(remoteId) {
     const pc = createGroupPeerConnection(remoteId);
     groupCallPeers[remoteId] = pc;
     groupCallLocalStream.getTracks().forEach(t => pc.addTrack(t, groupCallLocalStream));
+    if (groupScreenTrack) {
+      // They joined while I'm sharing: include my screen in the very first offer
+      const camSender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+      if (camSender) await camSender.replaceTrack(groupScreenTrack);
+      groupScreenSenders[remoteId] = camSender || pc.addTrack(groupScreenTrack, groupCallLocalStream);
+    }
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     groupCallSignal({ to: remoteId, type: 'offer', sdp: offer });
+    if (groupScreenTrack) groupCallSignal({ to: remoteId, type: 'screen-state', enabled: true });
   }
+
+  async function shareScreenWithGroupPeer(remoteId) {
+    const conn = groupCallPeers[remoteId];
+    if (!conn || !groupScreenTrack) return;
+    groupScreenSenders[remoteId] = await attachScreenTrack(conn, groupScreenSenders[remoteId], groupScreenTrack, groupCallLocalStream,
+      offer => groupCallSignal({ to: remoteId, type: 'offer', sdp: offer }));
+    groupCallSignal({ to: remoteId, type: 'screen-state', enabled: true });
+  }
+
+  async function startGroupScreenShare() {
+    if (!inGroupCall || groupScreenTrack) return;
+    const track = await getScreenTrack();
+    if (!track) return;
+    if (!inGroupCall) { track.stop(); return; }
+
+    groupScreenTrack = track;
+    track.onended = stopGroupScreenShare;
+    const myVideo = getOrCreateTile(me.id).querySelector('video');
+    myVideo.srcObject = new MediaStream([track]);
+    updateGroupTileVisual(me.id);
+    document.getElementById('groupScreenShareBtn').classList.add('sharing');
+    await Promise.all(Object.keys(groupCallPeers).map(shareScreenWithGroupPeer));
+  }
+
+  async function stopGroupScreenShare() {
+    if (!groupScreenTrack) return;
+    const track = groupScreenTrack;
+    groupScreenTrack = null;
+    track.onended = null;
+    track.stop();
+    const camTrack = groupCallLocalStream ? groupCallLocalStream.getVideoTracks()[0] : null;
+    await Promise.all(Object.entries(groupScreenSenders).map(([id, sender]) => {
+      groupCallSignal({ to: id, type: 'screen-state', enabled: false });
+      return sender.replaceTrack(camTrack || null);
+    }));
+    const myVideo = document.querySelector('.group-tile[data-user-id="' + me.id + '"] video');
+    if (myVideo) myVideo.srcObject = groupCallLocalStream;
+    if (inGroupCall) updateGroupTileVisual(me.id);
+    document.getElementById('groupScreenShareBtn').classList.remove('sharing');
+  }
+
+  document.getElementById('groupScreenShareBtn').addEventListener('click', () => {
+    if (groupScreenTrack) stopGroupScreenShare(); else startGroupScreenShare();
+  });
 
   async function handleGroupRtcSignal(payload) {
     if (payload.to !== me.id) return;
@@ -2798,6 +3051,8 @@
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       groupCallSignal({ to: remoteId, type: 'answer', sdp: answer });
+      // New person and I'm already sharing: send them my screen too
+      if (groupScreenTrack && !groupScreenSenders[remoteId]) shareScreenWithGroupPeer(remoteId);
       return;
     }
 
@@ -2825,6 +3080,12 @@
 
     if (payload.type === 'video-state') {
       groupParticipantVideo[remoteId] = payload.enabled;
+      updateGroupTileVisual(remoteId);
+      return;
+    }
+
+    if (payload.type === 'screen-state') {
+      groupParticipantScreen[remoteId] = payload.enabled;
       updateGroupTileVisual(remoteId);
       return;
     }
@@ -2888,6 +3149,7 @@
       alert('Could not access microphone/camera: ' + err.message);
       return;
     }
+    await loadRtcConfig();
     await loadGroupCallMemberProfiles(group);
 
     inGroupCall = true;
@@ -2925,6 +3187,7 @@
       alert('Could not access microphone/camera: ' + err.message);
       return;
     }
+    await loadRtcConfig();
     await loadGroupCallMemberProfiles(group);
 
     inGroupCall = true;
@@ -2950,6 +3213,10 @@
     groupCallPeers = {};
     groupPendingCandidates = {};
     groupParticipantVideo = {};
+    if (groupScreenTrack) { groupScreenTrack.onended = null; groupScreenTrack.stop(); groupScreenTrack = null; }
+    groupScreenSenders = {};
+    groupParticipantScreen = {};
+    document.getElementById('groupScreenShareBtn').classList.remove('sharing');
     if (groupCallRoomChannel) {
       groupCallRoomChannel.untrack();
       supabaseClient.removeChannel(groupCallRoomChannel);
