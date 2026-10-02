@@ -158,6 +158,34 @@
   .text-link-btn:hover { text-decoration: underline; }
 
   .member-count { font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+  .group-edit-btn {
+    border: none; cursor: pointer; width: 26px; height: 26px; border-radius: 50%;
+    background: rgba(255,255,255,0.55); box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+    font-size: 12px; display: flex; align-items: center; justify-content: center;
+    transition: transform 0.12s ease;
+  }
+  .group-edit-btn:hover { transform: scale(1.1) rotate(-8deg); }
+
+  .group-member-row {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 8px;
+    border-radius: 14px; background: rgba(255,255,255,0.45);
+  }
+  .group-member-row .name { font-weight: 700; font-size: 14px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .owner-badge {
+    font-family: 'Nunito Sans', sans-serif; font-weight: 700; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.04em; color: #8a5a00;
+    background: linear-gradient(160deg, #ffe08a, #ffc53d); padding: 2px 8px; border-radius: 999px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+  }
+  .remove-member-btn {
+    border: none; cursor: pointer; padding: 5px 12px; border-radius: 999px;
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 12px; color: #fff;
+    background: linear-gradient(160deg, #ff8a8a, #d1453f);
+    box-shadow: inset 0 1px 2px rgba(255,255,255,0.5);
+  }
+  .remove-member-btn:active { transform: scale(0.93); }
+  .invite-members { font-size: 13px; color: var(--ink-soft); text-align: center; max-width: 260px; line-height: 1.4; }
+  .invite-card .invite-members { color: rgba(255,255,255,0.9); margin: -6px auto 12px; }
   .call-icon-btn.invite { background: linear-gradient(160deg, #6fd6ff, #1a8fd1); font-size: 15px; }
 
   .invite-card {
@@ -621,6 +649,7 @@
         <div class="avatar" id="chatAvatar"></div>
         <span id="chatFriendName"></span>
         <span class="member-count" id="chatMemberCount" style="display:none;"></span>
+        <button class="group-edit-btn" id="editGroupBtn" title="Group settings" style="display:none;">✏️</button>
         <div class="header-actions">
           <button class="call-icon-btn voice" id="voiceCallBtn" title="Voice call"><img src="icon-call.png" alt="Call"></button>
           <button class="call-icon-btn video" id="videoCallBtn" title="Video call"><img src="icon-video.png" alt="Video call"></button>
@@ -744,7 +773,7 @@
     </div>
     <div class="win-body">
       <div class="win-error-icon">✕</div>
-      <div class="win-message">Are you sure you want to leave this group?</div>
+      <div class="win-message" id="leaveGroupMessage">Are you sure you want to leave this group?</div>
     </div>
     <div class="win-buttons">
       <button class="win-btn primary" id="leaveGroupYesBtn">Yes</button>
@@ -753,10 +782,68 @@
   </div>
 </div>
 
+<div class="call-overlay" id="groupSettingsOverlay">
+  <div class="settings-card glass">
+    <div class="settings-header">
+      <span>👥 Group Settings</span>
+      <button class="settings-close" id="groupSettingsCloseBtn">✕</button>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-title">Group</div>
+
+      <div class="settings-section">
+        <div class="settings-label">🖼️ Group Picture</div>
+        <div class="avatar-row">
+          <div class="avatar no-status" id="groupSettingsAvatar" style="width:64px;height:64px;font-size:24px;"></div>
+          <div>
+            <input type="file" id="groupIconInput" accept="image/*" style="display:none">
+            <button class="add-btn" id="groupIconChooseBtn" style="padding:10px 18px;">Choose New Picture</button>
+            <div class="add-error" id="groupIconStatus" style="margin-top:6px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-label">✏️ Group Name</div>
+        <div class="add-row">
+          <input type="text" id="groupNameInput" maxlength="50" placeholder="group name">
+          <button class="add-btn" id="groupNameSaveBtn">Save</button>
+        </div>
+        <div class="add-error" id="groupNameStatus"></div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-title" id="groupSettingsMembersTitle">Members</div>
+      <div id="groupSettingsMembers"></div>
+    </div>
+  </div>
+</div>
+
+<div class="call-overlay" id="removeMemberOverlay">
+  <div class="win-dialog">
+    <div class="win-titlebar">
+      <span class="win-title-icon">🗔</span>
+      <span>Remove Member</span>
+      <button class="win-close" id="removeMemberCloseX">✕</button>
+    </div>
+    <div class="win-body">
+      <div class="win-error-icon">✕</div>
+      <div class="win-message" id="removeMemberMessage">Remove this person from the group?</div>
+    </div>
+    <div class="win-buttons">
+      <button class="win-btn primary" id="removeMemberYesBtn">Yes</button>
+      <button class="win-btn" id="removeMemberNoBtn">No</button>
+    </div>
+  </div>
+</div>
+
 <div class="call-overlay" id="groupInviteOverlay">
   <div class="call-card glass">
     <div class="call-avatar" id="groupInviteAvatar" style="background:linear-gradient(160deg,#c9a8ff,#7a5af0);">👥</div>
     <div class="call-name" id="groupInviteName">Loading invite…</div>
+    <div class="invite-members" id="groupInviteMembers"></div>
     <div class="call-status" id="groupInviteStatus"></div>
     <div class="call-actions">
       <button class="call-btn accept" id="groupInviteJoinBtn">✓</button>
@@ -886,6 +973,27 @@
     if (profile && profile.avatar_url) return '';
     return avatarStyle(profile ? profile.id : 'x');
   }
+  function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  }
+  function groupAvatarStyle(group) {
+    return group.icon_url ? '' : avatarStyle(group.id);
+  }
+  function groupAvatarInner(group) {
+    if (group.icon_url) return `<img class="avatar-img" src="${escapeHtml(group.icon_url)}" alt="">`;
+    return escapeHtml(group.name[0].toUpperCase());
+  }
+  // memberIds is kept in join order, so the longest-standing member is the owner
+  function groupOwnerId(group) {
+    return group.memberIds[0] || null;
+  }
+  function memberNamesText(profiles) {
+    const names = profiles.map(p => p.display_name || p.username);
+    if (names.length === 0) return 'No one is in this group yet';
+    if (names.length === 1) return names[0];
+    return names.slice(0, -1).join(', ') + ' & ' + names[names.length - 1];
+  }
+
   function findProfileById(id) {
     if (meProfile && meProfile.id === id) return meProfile;
     return friendsCache.find(f => f.id === id) || null;
@@ -1157,7 +1265,12 @@
     if (groupIds.length === 0) { groupsCache = []; lastGroupMessageAt = {}; return; }
 
     const { data: groups } = await supabaseClient.from('groups').select('*').in('id', groupIds);
-    const { data: allMembers } = await supabaseClient.from('group_members').select('group_id, user_id').in('group_id', groupIds);
+    let { data: allMembers, error: membersError } = await supabaseClient
+      .from('group_members').select('group_id, user_id, joined_at').in('group_id', groupIds).order('joined_at');
+    if (membersError) {
+      // joined_at column not added yet (group-icons-and-owners.sql not run)
+      ({ data: allMembers } = await supabaseClient.from('group_members').select('group_id, user_id').in('group_id', groupIds));
+    }
 
     groupsCache = (groups || []).map(g => ({
       ...g,
@@ -1175,6 +1288,21 @@
     (recentGroupMsgs || []).forEach(row => {
       if (!(row.group_id in lastGroupMessageAt)) lastGroupMessageAt[row.group_id] = row.created_at;
     });
+
+    // Keep the open group pointing at the fresh copy (new name/picture/members)
+    if (activeGroup) {
+      const fresh = groupsCache.find(g => g.id === activeGroup.id);
+      if (fresh) { activeGroup = fresh; refreshGroupHeader(); }
+    }
+  }
+
+  function refreshGroupHeader() {
+    if (!activeGroup) return;
+    document.getElementById('chatFriendName').textContent = activeGroup.name;
+    document.getElementById('chatMemberCount').textContent = `${activeGroup.memberIds.length}/5 members`;
+    const chatAvatarEl = document.getElementById('chatAvatar');
+    chatAvatarEl.setAttribute('style', groupAvatarStyle(activeGroup));
+    chatAvatarEl.innerHTML = groupAvatarInner(activeGroup);
   }
 
   function renderFriendList() {
@@ -1220,7 +1348,7 @@
         row.className = 'friend-row'
           + (activeGroup && activeGroup.id === g.id ? ' active' : '')
           + (item.online ? '' : ' offline');
-        row.innerHTML = `<div class="avatar no-status" style="${avatarStyle(g.id)}">${g.name[0].toUpperCase()}</div><div class="name">${g.name}<span class="group-badge">👥</span></div>`;
+        row.innerHTML = `<div class="avatar no-status" style="${groupAvatarStyle(g)}">${groupAvatarInner(g)}</div><div class="name">${escapeHtml(g.name)}<span class="group-badge">👥</span></div>`;
         row.addEventListener('click', () => openGroupConversation(g));
       }
       listEl.appendChild(row);
@@ -1287,6 +1415,7 @@
     document.getElementById('videoCallBtn').style.display = 'flex';
     document.getElementById('inviteLinkBtn').style.display = 'none';
     document.getElementById('leaveGroupBtn').style.display = 'none';
+    document.getElementById('editGroupBtn').style.display = 'none';
     const chatAvatarEl = document.getElementById('chatAvatar');
     chatAvatarEl.className = 'avatar';
     chatAvatarEl.setAttribute('style', avatarFullStyle(friend) + 'cursor:pointer;');
@@ -1336,9 +1465,8 @@
     renderFriendList();
     document.getElementById('noChat').style.display = 'none';
     chatArea.style.display = 'flex';
-    document.getElementById('chatFriendName').textContent = group.name;
-    document.getElementById('chatMemberCount').textContent = `${group.memberIds.length}/5 members`;
     document.getElementById('chatMemberCount').style.display = 'inline';
+    document.getElementById('editGroupBtn').style.display = 'flex';
     document.getElementById('voiceCallBtn').style.display = 'flex';
     document.getElementById('videoCallBtn').style.display = 'flex';
     document.getElementById('inviteLinkBtn').style.display = 'flex';
@@ -1346,9 +1474,8 @@
 
     const chatAvatarEl = document.getElementById('chatAvatar');
     chatAvatarEl.className = 'avatar no-status';
-    chatAvatarEl.setAttribute('style', avatarStyle(group.id));
-    chatAvatarEl.innerHTML = group.name[0].toUpperCase();
     chatAvatarEl.onclick = null;
+    refreshGroupHeader();
 
     const { data: memberProfiles } = await supabaseClient.from('profiles').select('*').in('id', group.memberIds);
     activeGroupMembers = {};
@@ -1451,6 +1578,18 @@
         <button class="invite-join-btn" data-action="join" disabled>join?</button>
       </div>`;
   }
+  // Group name/picture + members (in join order) for someone who may not be in it yet
+  async function fetchInvitePreview(groupId) {
+    const { data: preview, error } = await supabaseClient.rpc('group_invite_preview', { gid: groupId });
+    if (error || !preview) return null;
+    const memberIds = preview.member_ids || [];
+    const { data: profiles } = memberIds.length
+      ? await supabaseClient.from('profiles').select('*').in('id', memberIds)
+      : { data: [] };
+    const memberProfiles = memberIds.map(id => (profiles || []).find(p => p.id === id)).filter(Boolean);
+    return { group: preview, memberIds, memberProfiles };
+  }
+
   async function wireInviteCard(row, groupId) {
     const card = row.querySelector('.invite-card');
     const titleEl = card.querySelector('[data-role="title"]');
@@ -1458,17 +1597,19 @@
     const dismissBtn = card.querySelector('[data-action="dismiss"]');
     dismissBtn.addEventListener('click', () => row.remove());
 
-    const { data: group } = await supabaseClient.from('groups').select('*').eq('id', groupId).maybeSingle();
-    if (!group) { titleEl.textContent = 'This invite is no longer valid.'; return; }
-
-    const { data: members } = await supabaseClient.from('group_members').select('user_id').eq('group_id', groupId);
-    const memberIds = (members || []).map(x => x.user_id);
+    const preview = await fetchInvitePreview(groupId);
+    if (!preview) { titleEl.textContent = 'This invite is no longer valid.'; return; }
+    const { group, memberIds, memberProfiles } = preview;
     const alreadyMember = memberIds.includes(me.id);
     const isFull = memberIds.length >= 5;
 
     titleEl.textContent = alreadyMember
       ? `You're already in ${group.name}`
       : `You've been invited to join ${group.name}`;
+    const membersEl = document.createElement('div');
+    membersEl.className = 'invite-members';
+    membersEl.textContent = `👥 ${memberNamesText(memberProfiles)}`;
+    titleEl.after(membersEl);
 
     if (alreadyMember) {
       joinBtn.textContent = '✓ Joined';
@@ -1497,7 +1638,10 @@
     renderFriendList();
     playSound('joingroup.mp3', 0.6);
     const joined = groupsCache.find(g => g.id === groupId);
-    if (joined) openGroupConversation(joined);
+    if (joined) {
+      notifyGroupChanged(joined);
+      openGroupConversation(joined);
+    }
     return true;
   }
   function checkInviteParam() {
@@ -1510,23 +1654,30 @@
   async function showGroupInviteOverlay(groupId) {
     document.getElementById('groupInviteName').textContent = 'Loading invite…';
     document.getElementById('groupInviteStatus').textContent = '';
+    document.getElementById('groupInviteMembers').textContent = '';
     document.getElementById('groupInviteJoinBtn').style.display = 'flex';
+    const inviteAvatarEl = document.getElementById('groupInviteAvatar');
+    inviteAvatarEl.setAttribute('style', 'background:linear-gradient(160deg,#c9a8ff,#7a5af0);');
+    inviteAvatarEl.innerHTML = '👥';
     showOverlay('groupInviteOverlay');
 
-    const { data: group } = await supabaseClient.from('groups').select('*').eq('id', groupId).maybeSingle();
-    if (!group) {
+    const preview = await fetchInvitePreview(groupId);
+    if (!preview) {
       document.getElementById('groupInviteName').textContent = 'Invite not found';
       document.getElementById('groupInviteStatus').textContent = 'This link may be invalid, or the group no longer exists.';
       document.getElementById('groupInviteJoinBtn').style.display = 'none';
       return;
     }
-
-    const { data: members } = await supabaseClient.from('group_members').select('user_id').eq('group_id', groupId);
-    const memberIds = (members || []).map(x => x.user_id);
+    const { group, memberIds, memberProfiles } = preview;
     const alreadyMember = memberIds.includes(me.id);
     const isFull = memberIds.length >= 5;
 
+    if (group.icon_url) {
+      inviteAvatarEl.setAttribute('style', '');
+      inviteAvatarEl.innerHTML = groupAvatarInner(group);
+    }
     document.getElementById('groupInviteName').textContent = group.name;
+    document.getElementById('groupInviteMembers').textContent = `👥 ${memberNamesText(memberProfiles)}`;
     document.getElementById('groupInviteStatus').textContent = alreadyMember
       ? "You're already in this group"
       : isFull ? 'This group is full (5/5 members)' : `${memberIds.length}/5 members`;
@@ -1694,6 +1845,7 @@
       return;
     }
 
+    notifyGroupChanged(activeGroup);
     if (groupMsgChannel) { supabaseClient.removeChannel(groupMsgChannel); groupMsgChannel = null; }
     activeGroup = null;
     document.getElementById('chatArea').style.display = 'none';
@@ -1704,15 +1856,169 @@
     renderFriendList();
   }
 
-  document.getElementById('leaveGroupBtn').addEventListener('click', () => {
-    if (activeGroup) {
-      showOverlay('leaveGroupOverlay');
-      playSound('error.mp3', 0.6);
+  document.getElementById('leaveGroupBtn').addEventListener('click', async () => {
+    if (!activeGroup) return;
+    const msgEl = document.getElementById('leaveGroupMessage');
+    msgEl.textContent = 'Are you sure you want to leave this group?';
+    const nextOwnerId = activeGroup.memberIds[1];
+    if (groupOwnerId(activeGroup) === me.id && nextOwnerId) {
+      const next = activeGroupMembers[nextOwnerId];
+      const nextName = next ? (next.display_name || next.username) : 'the next member';
+      msgEl.textContent = `You're the owner. If you leave, ${nextName} becomes the owner. Leave anyway?`;
     }
+    showOverlay('leaveGroupOverlay');
+    playSound('error.mp3', 0.6);
   });
   document.getElementById('leaveGroupYesBtn').addEventListener('click', leaveGroup);
   document.getElementById('leaveGroupNoBtn').addEventListener('click', hideAllOverlays);
   document.getElementById('leaveGroupCloseX').addEventListener('click', hideAllOverlays);
+
+  // ---------- Group settings (name, picture, members) ----------
+  // Tell everyone in the group to reload it (new name/picture/member list).
+  function notifyGroupChanged(group, extraUserIds = []) {
+    [...group.memberIds, ...extraUserIds]
+      .filter(id => id !== me.id)
+      .forEach(id => sendSignal(id, { type: 'group-updated', groupId: group.id }));
+  }
+
+  async function openGroupSettings() {
+    if (!activeGroup) return;
+    document.getElementById('groupIconStatus').textContent = '';
+    document.getElementById('groupNameStatus').textContent = '';
+    document.getElementById('groupNameInput').value = activeGroup.name;
+    renderGroupSettings();
+    showOverlay('groupSettingsOverlay');
+  }
+
+  function renderGroupSettings() {
+    const g = activeGroup;
+    if (!g) return;
+    const avatarEl = document.getElementById('groupSettingsAvatar');
+    avatarEl.setAttribute('style', groupAvatarStyle(g) + 'width:64px;height:64px;font-size:24px;');
+    avatarEl.innerHTML = groupAvatarInner(g);
+
+    document.getElementById('groupSettingsMembersTitle').textContent = `Members (${g.memberIds.length}/5)`;
+    const ownerId = groupOwnerId(g);
+    const iAmOwner = ownerId === me.id;
+    const listEl = document.getElementById('groupSettingsMembers');
+    listEl.innerHTML = '';
+    g.memberIds.forEach(id => {
+      const p = activeGroupMembers[id] || findProfileById(id) || { id, username: 'Unknown' };
+      const row = document.createElement('div');
+      row.className = 'group-member-row';
+      row.innerHTML = `
+        <div class="avatar" style="${avatarFullStyle(p)}">${avatarInner(p)}</div>
+        <div class="name">${escapeHtml(p.display_name || p.username)}${id === me.id ? ' (you)' : ''}</div>
+        ${id === ownerId ? '<span class="owner-badge">👑 Owner</span>' : ''}
+        ${iAmOwner && id !== me.id ? '<button class="remove-member-btn">Remove</button>' : ''}`;
+      const removeBtn = row.querySelector('.remove-member-btn');
+      if (removeBtn) removeBtn.addEventListener('click', () => confirmRemoveMember(p));
+      listEl.appendChild(row);
+    });
+  }
+
+  document.getElementById('editGroupBtn').addEventListener('click', openGroupSettings);
+  document.getElementById('groupSettingsCloseBtn').addEventListener('click', hideAllOverlays);
+
+  document.getElementById('groupNameSaveBtn').addEventListener('click', async () => {
+    if (!activeGroup) return;
+    const status = document.getElementById('groupNameStatus');
+    const name = document.getElementById('groupNameInput').value.trim();
+    if (!name || name === activeGroup.name) return;
+    status.textContent = 'Saving…';
+    const { error } = await supabaseClient.rpc('update_group', { gid: activeGroup.id, new_name: name, new_icon_url: null });
+    if (error) { status.textContent = 'Failed: ' + error.message; playSound('error.mp3', 0.6); return; }
+    status.textContent = 'Saved!';
+    await loadGroups();
+    renderFriendList();
+    renderGroupSettings();
+    notifyGroupChanged(activeGroup);
+  });
+  document.getElementById('groupNameInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('groupNameSaveBtn').click();
+  });
+
+  document.getElementById('groupIconChooseBtn').addEventListener('click', () => {
+    document.getElementById('groupIconInput').click();
+  });
+  document.getElementById('groupIconInput').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file || !activeGroup) return;
+    const status = document.getElementById('groupIconStatus');
+    status.textContent = 'Uploading…';
+    try {
+      const ext = file.name.split('.').pop();
+      const path = `${me.id}/group-${activeGroup.id}-${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabaseClient.storage.from('chat-uploads').upload(path, file);
+      if (uploadError) throw uploadError;
+      const { data: urlData } = supabaseClient.storage.from('chat-uploads').getPublicUrl(path);
+
+      const { error } = await supabaseClient.rpc('update_group', { gid: activeGroup.id, new_name: null, new_icon_url: urlData.publicUrl });
+      if (error) throw error;
+
+      status.textContent = 'Updated!';
+      await loadGroups();
+      renderFriendList();
+      renderGroupSettings();
+      notifyGroupChanged(activeGroup);
+    } catch (err) {
+      status.textContent = 'Failed: ' + err.message;
+    }
+  });
+
+  let memberPendingRemoval = null;
+  function confirmRemoveMember(profile) {
+    memberPendingRemoval = profile;
+    document.getElementById('removeMemberMessage').textContent =
+      `Remove ${profile.display_name || profile.username} from ${activeGroup.name}?`;
+    showOverlay('removeMemberOverlay');
+    playSound('error.mp3', 0.6);
+  }
+  function cancelRemoveMember() {
+    memberPendingRemoval = null;
+    openGroupSettings();
+  }
+  document.getElementById('removeMemberYesBtn').addEventListener('click', async () => {
+    if (!activeGroup || !memberPendingRemoval) return;
+    const removed = memberPendingRemoval;
+    memberPendingRemoval = null;
+    const { error } = await supabaseClient.rpc('remove_group_member', { gid: activeGroup.id, target: removed.id });
+    if (error) {
+      hideAllOverlays();
+      alert('Could not remove member: ' + error.message);
+      return;
+    }
+    const groupBefore = activeGroup;
+    await loadGroups();
+    renderFriendList();
+    notifyGroupChanged(activeGroup || groupBefore, [removed.id]);
+    openGroupSettings();
+  });
+  document.getElementById('removeMemberNoBtn').addEventListener('click', cancelRemoveMember);
+  document.getElementById('removeMemberCloseX').addEventListener('click', cancelRemoveMember);
+
+  // Someone renamed / re-pictured the group, or added/removed a member
+  async function handleGroupUpdated(groupId) {
+    const wasOpen = activeGroup && activeGroup.id === groupId;
+    const oldName = wasOpen ? activeGroup.name : null;
+    await loadGroups();
+    const stillIn = groupsCache.some(g => g.id === groupId);
+    if (wasOpen && !stillIn) {
+      // We were removed from the group that's open right now
+      if (groupMsgChannel) { supabaseClient.removeChannel(groupMsgChannel); groupMsgChannel = null; }
+      activeGroup = null;
+      document.getElementById('chatArea').style.display = 'none';
+      document.getElementById('noChat').style.display = 'flex';
+      if (document.getElementById('groupSettingsOverlay').classList.contains('show')) hideAllOverlays();
+      alert(`You were removed from ${oldName}.`);
+    } else if (wasOpen) {
+      const { data: memberProfiles } = await supabaseClient.from('profiles').select('*').in('id', activeGroup.memberIds);
+      (memberProfiles || []).forEach(p => { activeGroupMembers[p.id] = p; });
+      if (document.getElementById('groupSettingsOverlay').classList.contains('show')) renderGroupSettings();
+    }
+    renderFriendList();
+  }
 
   document.getElementById('logoutBtn').addEventListener('click', async () => {
     if (groupMsgChannel) supabaseClient.removeChannel(groupMsgChannel);
@@ -1972,13 +2278,15 @@
       .send({ type: 'broadcast', event: 'signal', payload: { ...payload, from: me.id, fromName: me.username } });
   }
 
+  const ALL_OVERLAYS = ['outgoingOverlay', 'incomingOverlay', 'inCallOverlay', 'settingsOverlay', 'groupInviteOverlay', 'leaveGroupOverlay',
+    'groupIncomingOverlay', 'groupCallOverlay', 'groupSettingsOverlay', 'removeMemberOverlay'];
   function showOverlay(id) {
-    ['outgoingOverlay', 'incomingOverlay', 'inCallOverlay', 'settingsOverlay', 'groupInviteOverlay', 'leaveGroupOverlay', 'groupIncomingOverlay', 'groupCallOverlay'].forEach(o => {
+    ALL_OVERLAYS.forEach(o => {
       document.getElementById(o).classList.toggle('show', o === id);
     });
   }
   function hideAllOverlays() {
-    ['outgoingOverlay', 'incomingOverlay', 'inCallOverlay', 'settingsOverlay', 'groupInviteOverlay', 'leaveGroupOverlay', 'groupIncomingOverlay', 'groupCallOverlay'].forEach(o => document.getElementById(o).classList.remove('show'));
+    ALL_OVERLAYS.forEach(o => document.getElementById(o).classList.remove('show'));
   }
 
   async function getMedia(video) {
@@ -2279,6 +2587,12 @@
 
     if (type === 'hangup') {
       if (callPeer && callPeer.id === from) resetCallState();
+      return;
+    }
+
+    if (type === 'group-updated') {
+      // Only a hint to reload - what we show always comes from the database
+      handleGroupUpdated(payload.groupId);
       return;
     }
   }
