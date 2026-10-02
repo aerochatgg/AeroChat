@@ -110,6 +110,57 @@ const THEMES = {
   }
 };
 
+// ---------- Fonts ----------
+// 'aero' keeps each page's own Quicksand + Nunito Sans pair. The others
+// replace every font in the app with one family.
+const FONTS = {
+  aero:        { label: 'Aero',        sample: 'Quicksand',     family: null },
+  vista:       { label: 'Vista',       sample: 'Segoe UI',      family: "'Segoe UI', 'Frutiger', 'Helvetica Neue', Arial, sans-serif" },
+  bubbly:      { label: 'Bubbly',      sample: 'Fredoka',       family: "'Fredoka', sans-serif",          google: 'Fredoka:wght@400;500;600;700' },
+  handwritten: { label: 'Handwritten', sample: 'Patrick Hand',  family: "'Patrick Hand', cursive",         google: 'Patrick+Hand' },
+  pixel:       { label: 'Pixel',       sample: 'Pixelify Sans', family: "'Pixelify Sans', monospace",     google: 'Pixelify+Sans:wght@400;500;600;700' },
+  classic:     { label: 'Classic',     sample: 'Lora',          family: "'Lora', Georgia, serif",         google: 'Lora:wght@400;500;600;700' }
+};
+
+function loadFontFile(fontId) {
+  const font = FONTS[fontId];
+  if (!font || !font.google || document.getElementById('font-link-' + fontId)) return;
+  const link = document.createElement('link');
+  link.id = 'font-link-' + fontId;
+  link.rel = 'stylesheet';
+  link.href = `https://fonts.googleapis.com/css2?family=${font.google}&display=swap`;
+  document.head.appendChild(link);
+}
+
+function applyFont(fontId) {
+  const font = FONTS[fontId] ? fontId : 'aero';
+  loadFontFile(font);
+  document.documentElement.setAttribute('data-font', font);
+  if (FONTS[font].family) document.documentElement.style.setProperty('--app-font', FONTS[font].family);
+  else document.documentElement.style.removeProperty('--app-font');
+}
+
+async function getSavedFontId() {
+  try {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session) return null;
+    const { data, error } = await supabaseClient.from('profiles').select('font').eq('id', session.user.id).single();
+    if (error) return null; // column not added yet
+    return (data && data.font) || 'aero';
+  } catch (e) {
+    return null;
+  }
+}
+
+async function saveFontId(fontId) {
+  writeThemeCache({ font: fontId });
+  try {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session) return;
+    await supabaseClient.from('profiles').update({ font: fontId }).eq('id', session.user.id);
+  } catch (e) {}
+}
+
 // ---------- Inject the CSS these effects need (once, on load) ----------
 (function injectThemeCss() {
   const css = `
@@ -121,8 +172,9 @@ const THEMES = {
 
     .theme-ring {
       position: absolute; border-radius: 50%;
-      border: 3px solid rgba(255,220,80,0.9);
-      box-shadow: 0 0 20px 6px rgba(255,210,60,0.55);
+      /* --ring-color is the accent color in custom themes; gold otherwise */
+      border: 3px solid color-mix(in srgb, var(--ring-color, rgb(255,220,80)) 90%, transparent);
+      box-shadow: 0 0 20px 6px color-mix(in srgb, var(--ring-color, rgb(255,210,60)) 55%, transparent);
       opacity: 0; animation: themeRingPulse 1.6s ease-out forwards; pointer-events: none;
     }
     @keyframes themeRingPulse {
@@ -172,6 +224,9 @@ const THEMES = {
     }
 
     html[data-theme="darkaero"] .add-error { color: #d8ffd8; }
+
+    html[data-font]:not([data-font="aero"]) body,
+    html[data-font]:not([data-font="aero"]) body * { font-family: var(--app-font) !important; }
   `;
   const style = document.createElement('style');
   style.textContent = css;
@@ -215,7 +270,9 @@ function isColorDark(hex) {
 
 function applyCustomThemeVars(settings) {
   const effect = EFFECT_PRESETS[settings.effect] || EFFECT_PRESETS.aero;
-  const dark = isColorDark(settings.bgColor);
+  // Light text only when panels are see-through enough to show the dark
+  // background - DORFic's almost-solid white glass always needs dark text.
+  const dark = isColorDark(settings.bgColor) && effect.glassAlpha < 0.8;
   const vars = {
     '--sky-top': shadeColor(settings.bgColor, 75),
     '--sky-mid': settings.bgColor,
@@ -230,7 +287,8 @@ function applyCustomThemeVars(settings) {
     '--aqua-accent': settings.accentColor,
     '--topbar-bg': `linear-gradient(180deg, ${shadeColor(settings.accentColor, 55)} 0%, ${settings.accentColor} 55%, ${shadeColor(settings.accentColor, -45)} 100%)`,
     '--msg-bg': hexToRgba('#ffffff', effect.glassStrongAlpha),
-    '--msg-border': 'rgba(255,255,255,0.85)'
+    '--msg-border': 'rgba(255,255,255,0.85)',
+    '--ring-color': settings.accentColor
   };
   const root = document.documentElement.style;
   Object.entries(vars).forEach(([k, v]) => root.setProperty(k, v));
@@ -288,6 +346,7 @@ async function saveCustomSettings(settings) {
 function applyThemeVars(themeId) {
   const theme = THEMES[themeId] || THEMES.aero;
   const root = document.documentElement.style;
+  root.removeProperty('--ring-color'); // left over from a custom theme
   Object.entries(theme.vars).forEach(([k, v]) => root.setProperty(k, v));
   document.documentElement.setAttribute('data-theme', themeId);
 }
@@ -468,6 +527,7 @@ function applyFullTheme(themeId, settings) {
 // colors immediately, background effects as soon as the page body exists.
 (function applyCachedThemeEarly() {
   const cached = readThemeCache();
+  if (cached && cached.font) applyFont(cached.font);
   if (!cached || !cached.themeId) return;
   if (cached.themeId === 'custom' && !cached.custom) return;
   if (cached.themeId === 'custom') applyCustomThemeVars(cached.custom);
@@ -481,6 +541,11 @@ const DEFAULT_CUSTOM_SETTINGS = { effect: 'aero', buttonColor: '#a8e063', accent
 
 // Call this on page load - applies the user's saved theme (colors + background)
 async function initPageTheme() {
+  getSavedFontId().then(fontId => {
+    if (!fontId) return;
+    writeThemeCache({ font: fontId });
+    applyFont(fontId);
+  });
   const themeId = await getSavedThemeId();
   const settings = themeId === 'custom' ? ((await getSavedCustomSettings()) || DEFAULT_CUSTOM_SETTINGS) : undefined;
   writeThemeCache(themeId === 'custom' ? { themeId, custom: settings } : { themeId });

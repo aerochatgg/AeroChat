@@ -114,6 +114,18 @@
   .theme-row-name { font-weight: 700; font-size: 14.5px; }
   .theme-row-check { margin-left: auto; color: var(--aqua-accent); font-weight: 900; opacity: 0; }
   .theme-row.active .theme-row-check { opacity: 1; }
+  .font-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .font-option {
+    padding: 10px 8px; border-radius: 14px; text-align: center; cursor: pointer;
+    background: rgba(255,255,255,0.45); border: 2px solid transparent; color: var(--ink);
+    transition: background 0.15s ease, transform 0.12s ease;
+  }
+  .font-option:hover { background: rgba(255,255,255,0.65); }
+  .font-option:active { transform: scale(0.97); }
+  .font-option.active { border-color: var(--aqua-accent); background: rgba(255,255,255,0.75); }
+  /* each option previews its own font, even while another font is active */
+  .font-option .font-name { font-size: 17px; font-weight: 700; line-height: 1.2; }
+  .font-option .font-sample { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
 
   .preview-panel { padding: 26px; overflow-y: auto; }
   .preview-heading { font-size: 22px; margin: 0 0 6px; }
@@ -173,6 +185,8 @@
   <div class="theme-list glass">
     <div class="theme-list-label">Themes</div>
     <div id="themeRows"></div>
+    <div class="theme-list-label" style="margin-top:14px;">Font</div>
+    <div class="font-grid" id="fontRows"></div>
   </div>
 
   <div class="preview-panel glass">
@@ -262,6 +276,34 @@
     container.appendChild(customRow);
   }
 
+  let currentFontId = 'aero';
+
+  function renderFontRows() {
+    const container = document.getElementById('fontRows');
+    container.innerHTML = '';
+    Object.entries(FONTS).forEach(([id, font]) => {
+      loadFontFile(id); // so every option can show itself off
+      const family = font.family || "'Quicksand', sans-serif";
+      const opt = document.createElement('div');
+      opt.className = 'font-option' + (id === currentFontId ? ' active' : '');
+      opt.innerHTML = `<div class="font-name"></div><div class="font-sample"></div>`;
+      opt.querySelector('.font-name').textContent = font.label;
+      opt.querySelector('.font-sample').textContent = font.sample;
+      // !important beats the app-wide font override so the preview stays true
+      opt.querySelector('.font-name').style.setProperty('font-family', family, 'important');
+      opt.addEventListener('click', () => selectFont(id));
+      container.appendChild(opt);
+    });
+  }
+
+  function selectFont(id) {
+    if (id === currentFontId) return;
+    currentFontId = id;
+    applyFont(id);
+    renderFontRows();
+    saveFontId(id);
+  }
+
   function updateCustomEditorFields() {
     document.getElementById('customEffectSelect').value = customSettings.effect;
     document.getElementById('customButtonColor').value = customSettings.buttonColor;
@@ -331,8 +373,13 @@
       applyThemeBackground(currentThemeId);
     }
     renderThemeRows();
+
+    currentFontId = (await getSavedFontId()) || 'aero';
+    applyFont(currentFontId);
+    renderFontRows();
   }
 
+  renderFontRows();
   init();
 </script>
 

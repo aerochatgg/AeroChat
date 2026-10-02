@@ -278,6 +278,47 @@
 
   .messages { flex: 1; overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 12px; }
   .msg-row { display: flex; gap: 10px; max-width: 75%; }
+  .msg-row.removing { animation: msgRemove 0.25s ease forwards; }
+  @keyframes msgRemove { to { opacity: 0; transform: scale(0.9); } }
+
+  /* ✏️ / 🗑️ on your own messages (shown on hover) */
+  .msg-actions { display: flex; flex-direction: column; justify-content: center; gap: 4px; opacity: 0; transition: opacity 0.12s ease; }
+  .msg-row:hover .msg-actions, .msg-row.editing .msg-actions { opacity: 1; }
+  .msg-action-btn {
+    width: 26px; height: 26px; border-radius: 50%; border: none; cursor: pointer; font-size: 12px;
+    background: rgba(255,255,255,0.7); box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 1px 4px rgba(10,60,100,0.15);
+    display: flex; align-items: center; justify-content: center; transition: transform 0.12s ease;
+  }
+  .msg-action-btn:hover { transform: scale(1.12); background: #fff; }
+  .msg-edited { opacity: 0.75; font-style: italic; }
+  .msg-edit-input {
+    width: min(420px, 50vw); padding: 9px 12px; border-radius: 14px; outline: none;
+    border: 2px solid var(--aqua-accent); background: var(--glass-strong);
+    font-family: 'Nunito Sans', sans-serif; font-size: 14.5px; color: var(--ink);
+  }
+  .msg-edit-hint { font-size: 10.5px; color: var(--ink-soft); margin-top: 3px; }
+
+  /* 🔍 search in this conversation */
+  .call-icon-btn.search { background: linear-gradient(160deg, #ffffff, #cfe6f5); font-size: 15px; }
+  .chat-search {
+    display: none; align-items: center; gap: 8px; padding: 8px 20px; flex-shrink: 0;
+    border-bottom: 1px solid rgba(255,255,255,0.6); background: rgba(255,255,255,0.25);
+  }
+  .chat-search.show { display: flex; }
+  .chat-search input {
+    flex: 1; padding: 8px 14px; border-radius: 14px; outline: none;
+    border: 1px solid rgba(255,255,255,0.8); background: var(--glass-strong);
+    font-family: 'Nunito Sans', sans-serif; font-size: 13.5px; color: var(--ink);
+  }
+  .chat-search input:focus { border-color: var(--aqua-accent); }
+  .chat-search-count { font-size: 12px; font-weight: 700; color: var(--ink-soft); min-width: 54px; text-align: center; }
+  .chat-search-btn {
+    width: 28px; height: 28px; border-radius: 50%; border: none; cursor: pointer; font-size: 12px; color: var(--ink);
+    background: rgba(255,255,255,0.6); box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+  }
+  .chat-search-btn:hover { background: #fff; }
+  mark.search-hit { background: color-mix(in srgb, var(--aqua-accent) 30%, #fff8b0); color: inherit; border-radius: 4px; padding: 0 1px; }
+  mark.search-hit.current { background: var(--aqua-accent); color: #fff; box-shadow: 0 0 0 2px color-mix(in srgb, var(--aqua-accent) 40%, transparent); }
   .msg-row.mine { align-self: flex-end; flex-direction: row-reverse; }
   .msg-row .avatar { width: 32px; height: 32px; flex-shrink: 0; }
   .msg-bubble {
@@ -773,11 +814,19 @@
         <span class="member-count" id="chatMemberCount" style="display:none;"></span>
         <button class="group-edit-btn" id="editGroupBtn" title="Group settings" style="display:none;">✏️</button>
         <div class="header-actions">
+          <button class="call-icon-btn search" id="chatSearchBtn" title="Search this conversation">🔍</button>
           <button class="call-icon-btn voice" id="voiceCallBtn" title="Voice call"><img src="icon-call.png" alt="Call"></button>
           <button class="call-icon-btn video" id="videoCallBtn" title="Video call"><img src="icon-video.png" alt="Video call"></button>
           <button class="call-icon-btn invite" id="inviteLinkBtn" title="Copy invite link" style="display:none;"><img src="icon-link.png" alt="Copy invite link"></button>
           <button class="call-icon-btn leave" id="leaveGroupBtn" title="Leave group" style="display:none;"><img src="icon-leave.png" alt="Leave group"></button>
         </div>
+      </div>
+      <div class="chat-search" id="chatSearchBar">
+        <input type="text" id="chatSearchInput" placeholder="Search this conversation…">
+        <span class="chat-search-count" id="chatSearchCount"></span>
+        <button class="chat-search-btn" id="chatSearchOlder" title="Older (Enter)">▲</button>
+        <button class="chat-search-btn" id="chatSearchNewer" title="Newer (Shift+Enter)">▼</button>
+        <button class="chat-search-btn" id="chatSearchClose" title="Close (Esc)">✕</button>
       </div>
       <div class="messages" id="messages"></div>
       <div class="composer">
@@ -958,6 +1007,24 @@
     <div class="settings-group">
       <div class="settings-group-title" id="groupSettingsMembersTitle">Members</div>
       <div id="groupSettingsMembers"></div>
+    </div>
+  </div>
+</div>
+
+<div class="call-overlay" id="deleteMessageOverlay">
+  <div class="win-dialog">
+    <div class="win-titlebar">
+      <span class="win-title-icon">🗔</span>
+      <span>Delete Message</span>
+      <button class="win-close" id="deleteMessageCloseX">✕</button>
+    </div>
+    <div class="win-body">
+      <div class="win-error-icon">✕</div>
+      <div class="win-message">Delete this message for everyone? This can't be undone.</div>
+    </div>
+    <div class="win-buttons">
+      <button class="win-btn primary" id="deleteMessageYesBtn">Yes</button>
+      <button class="win-btn" id="deleteMessageNoBtn">No</button>
     </div>
   </div>
 </div>
@@ -1560,6 +1627,7 @@
     activeFriend = friend;
     activeGroup = null;
     if (groupMsgChannel) { supabaseClient.removeChannel(groupMsgChannel); groupMsgChannel = null; }
+    closeChatSearch();
     markConversationRead(friend.id);
     renderFriendList();
     document.getElementById('noChat').style.display = 'none';
@@ -1617,6 +1685,7 @@
 
     activeFriend = null;
     activeGroup = group;
+    closeChatSearch();
     renderFriendList();
     document.getElementById('noChat').style.display = 'none';
     chatArea.style.display = 'flex';
@@ -1665,6 +1734,9 @@
         if (activeGroup && activeGroup.id === group.id) appendMessage(m, true);
         renderFriendList();
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'group_messages', filter: `group_id=eq.${group.id}` }, payload => {
+        if (activeGroup && activeGroup.id === group.id) applyMessageUpdate(payload.new);
+      })
       .subscribe();
 
     chatArea.classList.remove('chat-fade-out');
@@ -1676,11 +1748,19 @@
   function isImageUrl(text) { return IMAGE_URL_RE.test(text.trim()); }
 
   function appendMessage(m, animate) {
+    if (m.deleted_at) return;
     const container = document.getElementById('messages');
+    if (animate) playSound('chat.mp3', 0.5);
+    container.appendChild(buildMessageRow(m, animate));
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function buildMessageRow(m, animate) {
     const mine = m.sender_id === me.id;
     const row = document.createElement('div');
     row.className = 'msg-row' + (mine ? ' mine' : '') + (animate ? (mine ? ' pop-mine' : ' pop-theirs') : '');
-    if (animate) playSound('chat.mp3', 0.5);
+    row.dataset.id = m.id;
+    row.__msg = m;
     const senderProfile = mine ? meProfile : (activeGroup ? activeGroupMembers[m.sender_id] : activeFriend);
     const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -1696,17 +1776,31 @@
     }
 
     const nameLabel = (activeGroup && !mine)
-      ? `<div class="msg-time" style="margin-bottom:2px;font-weight:700;">${(senderProfile && (senderProfile.display_name || senderProfile.username)) || 'Unknown'}</div>`
+      ? `<div class="msg-time" style="margin-bottom:2px;font-weight:700;">${escapeHtml((senderProfile && (senderProfile.display_name || senderProfile.username)) || 'Unknown')}</div>`
+      : '';
+    const isText = !invite && !isImageUrl(m.content);
+    const actionsHtml = mine
+      ? `<div class="msg-actions">
+           ${isText ? '<button class="msg-action-btn" data-action="edit" title="Edit">✏️</button>' : ''}
+           <button class="msg-action-btn" data-action="delete" title="Delete">🗑️</button>
+         </div>`
       : '';
 
     row.innerHTML = `
-      <div class="avatar no-status" style="cursor:pointer;${avatarStyleFor(senderProfile)}" onclick="viewProfile('${senderProfile ? senderProfile.username : ''}')">${avatarInner(senderProfile)}</div>
-      <div>
+      <div class="avatar no-status" style="cursor:pointer;${avatarStyleFor(senderProfile)}">${avatarInner(senderProfile)}</div>
+      <div class="msg-content">
         ${nameLabel}
         ${bodyHtml}
-        <div class="msg-time">${time}</div>
-      </div>`;
-    if (!invite && !isImageUrl(m.content)) row.querySelector('.msg-bubble').textContent = m.content;
+        <div class="msg-time">${time}${m.edited_at ? ' · <span class="msg-edited">(edited)</span>' : ''}</div>
+      </div>
+      ${actionsHtml}`;
+    row.querySelector('.avatar').addEventListener('click', () => viewProfile(senderProfile ? senderProfile.username : ''));
+    if (mine) {
+      const editBtn = row.querySelector('[data-action="edit"]');
+      if (editBtn) editBtn.addEventListener('click', () => startEditMessage(row));
+      row.querySelector('[data-action="delete"]').addEventListener('click', () => confirmDeleteMessage(row));
+    }
+    if (isText) row.querySelector('.msg-bubble').textContent = m.content;
     if (!invite && isImageUrl(m.content)) {
       const url = m.content.trim();
       const img = row.querySelector('.msg-image');
@@ -1717,13 +1811,184 @@
       updateFavStar(star);
       star.addEventListener('click', e => { e.stopPropagation(); toggleFavorite(url); });
     }
-    container.appendChild(row);
     if (invite) wireInviteCard(row, invite.groupId);
     if (animate) {
       row.addEventListener('animationend', () => row.classList.remove(mine ? 'pop-mine' : 'pop-theirs'), { once: true });
     }
-    container.scrollTop = container.scrollHeight;
+    return row;
   }
+
+  // ---------- Edit / delete your own messages ----------
+  function messageRowById(id) {
+    return [...document.querySelectorAll('#messages .msg-row')].find(r => String(r.dataset.id) === String(id)) || null;
+  }
+
+  // A message was edited or deleted (by me, or live from the other side)
+  function applyMessageUpdate(m) {
+    const row = messageRowById(m.id);
+    if (!row) return;
+    const old = row.__msg || {};
+    if (m.deleted_at) {
+      row.classList.add('removing');
+      setTimeout(() => row.remove(), 250);
+      return;
+    }
+    // Ignore updates that don't change what's shown (e.g. being marked as read)
+    if (old.content === m.content && old.edited_at === m.edited_at) { row.__msg = m; return; }
+    if (row.classList.contains('editing')) return; // don't yank the box out from under me
+    row.replaceWith(buildMessageRow(m, false));
+    if (chatSearchQuery) runChatSearch(chatSearchQuery, true);
+  }
+
+  function startEditMessage(row) {
+    if (row.classList.contains('editing')) return;
+    const m = row.__msg;
+    const bubble = row.querySelector('.msg-bubble');
+    if (!bubble) return;
+    row.classList.add('editing');
+    const input = document.createElement('input');
+    input.className = 'msg-edit-input';
+    input.value = m.content;
+    const hint = document.createElement('div');
+    hint.className = 'msg-edit-hint';
+    hint.textContent = 'Enter to save · Esc to cancel';
+    bubble.replaceWith(input);
+    input.after(hint);
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+
+    const finish = () => { row.classList.remove('editing'); row.replaceWith(buildMessageRow(row.__msg, false)); };
+    input.addEventListener('keydown', async e => {
+      if (e.key === 'Escape') { e.stopPropagation(); finish(); return; }
+      if (e.key !== 'Enter') return;
+      const text = input.value.trim();
+      if (!text || text === m.content) { finish(); return; }
+      input.disabled = true;
+      const { error } = await supabaseClient.rpc('edit_message', { is_group: !!activeGroup, mid: String(m.id), new_content: text });
+      if (error) {
+        input.disabled = false;
+        hint.textContent = 'Could not save: ' + error.message;
+        playSound('error.mp3', 0.6);
+        return;
+      }
+      row.__msg = { ...m, content: text, edited_at: new Date().toISOString() };
+      finish();
+    });
+    input.addEventListener('blur', () => { if (!input.disabled) setTimeout(() => { if (row.isConnected && row.classList.contains('editing')) finish(); }, 150); });
+  }
+
+  let messagePendingDelete = null;
+  function confirmDeleteMessage(row) {
+    messagePendingDelete = row;
+    showOverlay('deleteMessageOverlay');
+    playSound('error.mp3', 0.6);
+  }
+  document.getElementById('deleteMessageYesBtn').addEventListener('click', async () => {
+    const row = messagePendingDelete;
+    messagePendingDelete = null;
+    hideAllOverlays();
+    if (!row) return;
+    const m = row.__msg;
+    const { error } = await supabaseClient.rpc('delete_message', { is_group: !!activeGroup, mid: String(m.id) });
+    if (error) { alert('Could not delete: ' + error.message); return; }
+    applyMessageUpdate({ ...m, content: '', deleted_at: new Date().toISOString() });
+  });
+  const cancelDeleteMessage = () => { messagePendingDelete = null; hideAllOverlays(); };
+  document.getElementById('deleteMessageNoBtn').addEventListener('click', cancelDeleteMessage);
+  document.getElementById('deleteMessageCloseX').addEventListener('click', cancelDeleteMessage);
+
+  // ---------- Search this conversation ----------
+  let chatSearchQuery = '';
+  let chatSearchHits = [];   // <mark> elements, oldest first
+  let chatSearchIndex = -1;
+
+  function clearChatSearchMarks() {
+    document.querySelectorAll('#messages .msg-row').forEach(row => {
+      const bubble = row.querySelector('.msg-bubble');
+      if (bubble && bubble.querySelector('mark')) bubble.textContent = row.__msg.content;
+    });
+    chatSearchHits = [];
+    chatSearchIndex = -1;
+  }
+
+  // Wraps each match in <mark>, building text nodes (never HTML) so message text stays safe
+  function runChatSearch(query, keepPosition) {
+    const prevIndex = chatSearchIndex;
+    clearChatSearchMarks();
+    chatSearchQuery = query;
+    const countEl = document.getElementById('chatSearchCount');
+    if (!query) { countEl.textContent = ''; return; }
+    const needle = query.toLowerCase();
+    document.querySelectorAll('#messages .msg-row').forEach(row => {
+      const bubble = row.querySelector('.msg-bubble');
+      if (!bubble || !row.__msg) return;
+      const text = row.__msg.content;
+      const lower = text.toLowerCase();
+      if (!lower.includes(needle)) return;
+      bubble.textContent = '';
+      let pos = 0;
+      for (let at = lower.indexOf(needle); at !== -1; at = lower.indexOf(needle, pos)) {
+        bubble.append(text.slice(pos, at));
+        const mark = document.createElement('mark');
+        mark.className = 'search-hit';
+        mark.textContent = text.slice(at, at + needle.length);
+        bubble.append(mark);
+        chatSearchHits.push(mark);
+        pos = at + needle.length;
+      }
+      bubble.append(text.slice(pos));
+    });
+    if (chatSearchHits.length === 0) { countEl.textContent = 'No results'; return; }
+    const start = keepPosition && prevIndex >= 0 ? Math.min(prevIndex, chatSearchHits.length - 1) : chatSearchHits.length - 1;
+    goToSearchHit(start); // newest match first
+  }
+
+  function goToSearchHit(index) {
+    if (chatSearchHits.length === 0) return;
+    if (chatSearchHits[chatSearchIndex]) chatSearchHits[chatSearchIndex].classList.remove('current');
+    chatSearchIndex = (index + chatSearchHits.length) % chatSearchHits.length;
+    const hit = chatSearchHits[chatSearchIndex];
+    hit.classList.add('current');
+    hit.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    document.getElementById('chatSearchCount').textContent = `${chatSearchIndex + 1} of ${chatSearchHits.length}`;
+  }
+
+  function openChatSearch() {
+    document.getElementById('chatSearchBar').classList.add('show');
+    const input = document.getElementById('chatSearchInput');
+    input.focus();
+    input.select();
+  }
+  function closeChatSearch() {
+    clearChatSearchMarks();
+    chatSearchQuery = '';
+    document.getElementById('chatSearchInput').value = '';
+    document.getElementById('chatSearchCount').textContent = '';
+    document.getElementById('chatSearchBar').classList.remove('show');
+  }
+
+  let chatSearchTimer = null;
+  document.getElementById('chatSearchBtn').addEventListener('click', () => {
+    if (document.getElementById('chatSearchBar').classList.contains('show')) closeChatSearch(); else openChatSearch();
+  });
+  document.getElementById('chatSearchInput').addEventListener('input', e => {
+    clearTimeout(chatSearchTimer);
+    chatSearchTimer = setTimeout(() => runChatSearch(e.target.value.trim()), 200);
+  });
+  document.getElementById('chatSearchInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); goToSearchHit(chatSearchIndex + (e.shiftKey ? 1 : -1)); }
+    if (e.key === 'Escape') { e.stopPropagation(); closeChatSearch(); }
+  });
+  document.getElementById('chatSearchOlder').addEventListener('click', () => goToSearchHit(chatSearchIndex - 1));
+  document.getElementById('chatSearchNewer').addEventListener('click', () => goToSearchHit(chatSearchIndex + 1));
+  document.getElementById('chatSearchClose').addEventListener('click', closeChatSearch);
+  // Ctrl+F opens it while a chat is open
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && document.getElementById('chatArea').style.display === 'flex') {
+      e.preventDefault();
+      openChatSearch();
+    }
+  });
 
   // ---------- Group invite links ----------
   function buildInviteLink(groupId) {
@@ -2134,6 +2399,13 @@
         } else if (!isMine && m.receiver_id === me.id && !dndEnabled) {
           playSound('notification.mp3', 0.6);
         }
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, payload => {
+        const m = payload.new;
+        const involvesActive = activeFriend &&
+          ((m.sender_id === activeFriend.id && m.receiver_id === me.id) ||
+           (m.sender_id === me.id && m.receiver_id === activeFriend.id));
+        if (involvesActive) applyMessageUpdate(m);
       })
       .subscribe();
   }
@@ -2707,7 +2979,7 @@
   }
 
   const ALL_OVERLAYS = ['outgoingOverlay', 'incomingOverlay', 'inCallOverlay', 'settingsOverlay', 'groupInviteOverlay', 'leaveGroupOverlay',
-    'groupIncomingOverlay', 'groupCallOverlay', 'groupSettingsOverlay', 'removeMemberOverlay'];
+    'groupIncomingOverlay', 'groupCallOverlay', 'groupSettingsOverlay', 'removeMemberOverlay', 'deleteMessageOverlay'];
   function showOverlay(id) {
     ALL_OVERLAYS.forEach(o => {
       document.getElementById(o).classList.toggle('show', o === id);
