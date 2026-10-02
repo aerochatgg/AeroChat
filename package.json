@@ -1,0 +1,40 @@
+{
+  "name": "aerochat-desktop",
+  "version": "1.0.0",
+  "description": "AeroChat desktop app",
+  "main": "main.js",
+  "author": "You",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.aerochat.app",
+    "productName": "AeroChat",
+    "files": [
+      "main.js",
+      "app/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": "dmg",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "AeroChat needs microphone access for voice and video calls.",
+        "NSCameraUsageDescription": "AeroChat needs camera access for video calls."
+      }
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

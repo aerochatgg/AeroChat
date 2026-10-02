@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AeroChat - Profile</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="sounds.js"></script>
+<script src="theme-engine.js"></script>
+<style>
+  :root {
+    --sky-top: #bfe9ff; --sky-mid: #6fc3f0; --sky-deep: #0a4d8c;
+    --glass: rgba(255,255,255,0.38); --glass-strong: rgba(255,255,255,0.62); --glass-border: rgba(255,255,255,0.75);
+    --ink: #0b3a5c; --ink-soft: #3d6b8c;
+    --lime: #a8e063; --lime-dark: #6fae2f; --aqua-accent: #1fa9a0;
+    --shadow: 0 8px 32px rgba(10,60,100,0.25);
+    --topbar-bg: linear-gradient(180deg, #d4f77e 0%, #a8e063 55%, #7fbf3a 100%);
+    --status-online: #bfe9ff; --status-idle: #ffe98a; --status-dnd: #e0261e; --status-offline: #9db3c4;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; font-family: 'Nunito Sans', sans-serif; color: var(--ink); }
+  body {
+    background: radial-gradient(ellipse at 50% -10%, var(--sky-top) 0%, var(--sky-mid) 45%, var(--sky-deep) 100%);
+    position: relative; overflow-x: hidden; transition: background 0.4s ease;
+  }
+  h1, h2, h3, .brand { font-family: 'Quicksand', sans-serif; font-weight: 700; }
+
+  .seaweed-layer { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .bubble-layer { position: fixed; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }
+  .bubble {
+    position: absolute; bottom: -120px; border-radius: 50%;
+    background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.9), rgba(255,255,255,0.05) 60%, rgba(255,255,255,0.15) 100%);
+    box-shadow: inset 0 0 12px rgba(255,255,255,0.4);
+    animation: rise linear infinite; opacity: 0.5; will-change: transform;
+  }
+  @keyframes rise {
+    0% { transform: translateY(0) translateX(0); opacity: 0; }
+    10% { opacity: 0.5; }
+    100% { transform: translateY(-115vh) translateX(30px); opacity: 0; }
+  }
+
+  .topbar {
+    position: relative; z-index: 3;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 28px 26px;
+    background: var(--topbar-bg);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--lime-dark) 25%, transparent);
+    border-bottom-left-radius: 50% 18px; border-bottom-right-radius: 50% 18px;
+    transition: background 0.4s ease;
+  }
+  .topbar::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 55%;
+    background: linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0));
+    border-bottom-left-radius: 50% 18px; border-bottom-right-radius: 50% 18px; pointer-events: none;
+  }
+  .pill-nav {
+    position: relative; z-index: 1; padding: 9px 22px; border-radius: 999px;
+    background: linear-gradient(160deg, rgba(255,255,255,0.35), rgba(255,255,255,0.05));
+    border: 1px solid rgba(255,255,255,0.7); color: #fff;
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 15px;
+    text-shadow: 0 1px 2px rgba(0,60,0,0.3);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 3px 6px rgba(0,0,0,0.1);
+    text-decoration: none; cursor: pointer; border: none;
+  }
+  .topbar-right { display: flex; gap: 10px; }
+
+  .glass {
+    background: var(--glass); backdrop-filter: blur(12px) saturate(150%); -webkit-backdrop-filter: blur(12px) saturate(150%);
+    border: 1px solid var(--glass-border); border-radius: 22px;
+    box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.6);
+    transition: background 0.4s ease, border-color 0.4s ease;
+  }
+
+  .page {
+    position: relative; z-index: 2; max-width: 980px; margin: 0 auto;
+    padding: 28px 20px 60px; display: grid; grid-template-columns: 1fr 300px; gap: 18px;
+  }
+  .page.solo { grid-template-columns: 1fr; max-width: 760px; }
+  @media (max-width: 820px) { .page { grid-template-columns: 1fr; } }
+
+  .profile-card { position: relative; padding: 30px; display: grid; grid-template-columns: 230px 1fr; gap: 26px; }
+  @media (max-width: 620px) { .profile-card { grid-template-columns: 1fr; } }
+
+  .share-btn {
+    position: absolute; top: 18px; right: 18px; width: 36px; height: 36px; border-radius: 50%;
+    border: none; cursor: pointer; background: rgba(255,255,255,0.6); font-size: 15px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8); transition: transform 0.12s ease;
+  }
+  .share-btn:hover { transform: scale(1.08); }
+  .share-toast {
+    position: absolute; top: 58px; right: 18px; background: rgba(0,0,0,0.75); color: #fff;
+    font-size: 11.5px; font-weight: 700; padding: 5px 10px; border-radius: 8px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .share-toast.show { opacity: 1; }
+
+  .profile-left { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+  .profile-avatar-wrap { position: relative; }
+  .profile-avatar {
+    width: 130px; height: 130px; border-radius: 50%; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 46px;
+    box-shadow: inset 0 4px 8px rgba(255,255,255,0.5), 0 8px 20px rgba(10,60,100,0.25);
+  }
+  .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .profile-status-dot {
+    position: absolute; bottom: 8px; right: 8px; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--status-color, var(--status-offline)); border: 3px solid #eef9ff;
+    display: var(--status-display, none);
+  }
+
+  .username-row {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    background: rgba(255,255,255,0.4); border-radius: 14px; padding: 8px 14px;
+  }
+  .username-row .uname { font-weight: 700; font-size: 15px; }
+  .username-row .pron { font-size: 12.5px; color: var(--ink-soft); }
+  .mutual-line { font-size: 11.5px; color: var(--ink-soft); padding: 0 4px; }
+
+  .widget-box {
+    width: 100%; padding: 14px; border-radius: 16px; background: rgba(255,255,255,0.4);
+    border: 1px solid rgba(255,255,255,0.6); font-size: 13px; color: var(--ink);
+  }
+  .widget-box .widget-title { font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 12px; margin-bottom: 8px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.05em; }
+  .widget-box img { width: 100%; border-radius: 12px; display: block; }
+
+  .profile-right { display: flex; flex-direction: column; min-width: 0; }
+  .display-name { font-size: 30px; margin: 0 0 14px; word-break: break-word; }
+  .bio-box {
+    flex: 1; padding: 18px; border-radius: 18px; background: rgba(255,255,255,0.32);
+    border: 1px solid rgba(255,255,255,0.5); font-size: 14.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+    min-height: 160px;
+  }
+  .bio-box.empty { color: var(--ink-soft); font-style: italic; }
+
+  .editor-card { padding: 22px; height: fit-content; }
+  .editor-title { font-size: 17px; margin: 0 0 4px; }
+  .editor-sub { font-size: 12px; color: var(--ink-soft); margin: 0 0 18px; }
+  .editor-field { margin-bottom: 16px; }
+  .editor-label { font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 12.5px; margin-bottom: 7px; display: block; }
+  .editor-field input[type="text"], .editor-field textarea, .editor-field select {
+    width: 100%; padding: 9px 11px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.8);
+    background: var(--glass-strong); font-family: 'Nunito Sans', sans-serif; font-size: 13px; color: var(--ink);
+    outline: none;
+  }
+  .editor-field textarea { resize: vertical; min-height: 60px; }
+  .editor-field input[type="color"] { width: 100%; height: 36px; border: none; border-radius: 10px; cursor: pointer; background: none; }
+  .editor-save-note { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
+  .editor-btn {
+    border: none; cursor: pointer; padding: 8px 16px; border-radius: 10px;
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 12.5px; color: #fff;
+    background: linear-gradient(160deg, var(--lime), var(--lime-dark));
+  }
+  .not-found { text-align: center; padding: 60px 20px; }
+</style>
+</head>
+<body>
+
+<div class="seaweed-layer" id="seaweedLayer"></div>
+<div class="bubble-layer" id="bubbleLayer"></div>
+
+<div class="topbar">
+  <a class="pill-nav" href="home.html">⌂ Home</a>
+  <div class="topbar-right">
+    <a class="pill-nav" href="dms.html">💬 Chats</a>
+  </div>
+</div>
+
+<div class="page" id="pageRoot" style="display:none;">
+  <div class="profile-card glass" id="profileCard">
+    <button class="share-btn" id="shareBtn" title="Copy profile link">🔗</button>
+    <div class="share-toast" id="shareToast">Link copied!</div>
+
+    <div class="profile-left">
+      <div class="profile-avatar-wrap">
+        <div class="profile-avatar" id="profileAvatar"></div>
+        <div class="profile-status-dot" id="profileStatusDot"></div>
+      </div>
+      <div class="username-row">
+        <span class="uname" id="profileUsername"></span>
+        <span class="pron" id="profilePronouns"></span>
+      </div>
+      <div class="mutual-line" id="mutualLine" style="display:none;"></div>
+      <div class="widget-box" id="widgetBox" style="display:none;"></div>
+    </div>
+
+    <div class="profile-right">
+      <h1 class="display-name" id="profileDisplayName"></h1>
+      <div class="bio-box" id="profileBio"></div>
+    </div>
+  </div>
+
+  <div class="editor-card glass" id="editorCard" style="display:none;">
+    <h2 class="editor-title">Editor</h2>
+    <p class="editor-sub">Only visible on your own profile.</p>
+
+    <div class="editor-field">
+      <label class="editor-label">Display Name</label>
+      <input type="text" id="editDisplayName" maxlength="40">
+    </div>
+
+    <div class="editor-field">
+      <label class="editor-label">Pronouns</label>
+      <input type="text" id="editPronouns" maxlength="20" placeholder="e.g. she/her">
+    </div>
+
+    <div class="editor-field">
+      <label class="editor-label">Bio</label>
+      <textarea id="editBio" maxlength="300" placeholder="Tell people about yourself..."></textarea>
+    </div>
+
+    <div class="editor-field">
+      <label class="editor-label">Background Color</label>
+      <input type="color" id="editBgColor">
+    </div>
+
+    <div class="editor-field">
+      <label class="editor-label">Accent Color</label>
+      <input type="color" id="editAccentColor">
+    </div>
+
+    <div class="editor-field">
+      <label class="editor-label">Widget</label>
+      <select id="editWidgetType">
+        <option value="none">None</option>
+        <option value="custom_image">Custom Image</option>
+        <option value="gif">GIF</option>
+        <option value="extra_bio">Extra Bio Space</option>
+        <option value="country">Country</option>
+        <option value="timezone">Timezone</option>
+      </select>
+    </div>
+
+    <div class="editor-field" id="widgetValueWrap"></div>
+
+    <button class="editor-btn" id="saveProfileBtn">Save Changes</button>
+    <div class="editor-save-note" id="saveStatus"></div>
+  </div>
+</div>
+
+<div class="not-found" id="notFound" style="display:none;">
+  <h2>Profile not found</h2>
+  <p>No AeroChat user with that username.</p>
+</div>
+
+<script>
+  let me = null;
+  let meProfile = null;
+  let viewedProfile = null;
+  let isOwnProfile = false;
+
+  function shadeColor(hex, percent) {
+    hex = hex.replace('#', '');
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    const num = parseInt(hex, 16);
+    let r = (num >> 16) + percent, g = ((num >> 8) & 0x00FF) + percent, b = (num & 0x0000FF) + percent;
+    r = Math.max(0, Math.min(255, r)); g = Math.max(0, Math.min(255, g)); b = Math.max(0, Math.min(255, b));
+    return '#' + (0x1000000 + r * 0x10000 + g * 0x100 + b).toString(16).slice(1);
+  }
+
+  function getUsernameFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get('u');
+    if (fromQuery) return fromQuery;
+
+    // A 200 rewrite in Netlify keeps the ORIGINAL /@username in the address
+    // bar and window.location - the ?u=... version only ever existed
+    // internally on Netlify's side, so it never shows up here.
+    const match = window.location.pathname.match(/^\/@(.+)$/);
+    if (match) return decodeURIComponent(match[1]);
+
+    return null;
+  }
+
+  function avatarMarkup(profile) {
+    if (profile && profile.avatar_url) return `<img src="${profile.avatar_url}" alt="">`;
+    const palette = ['#7fe3d0','#ffd8a8','#c9a8ff','#ffe08a','#a8e063','#6fd6ff','#ff9fb0'];
+    let hash = 0;
+    const id = (profile && profile.id) || 'x';
+    for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) % palette.length;
+    const c = palette[Math.abs(hash) % palette.length];
+    document.getElementById('profileAvatar').style.background = `linear-gradient(160deg, ${c}, ${c}dd)`;
+    return ((profile && (profile.display_name || profile.username)) || '?')[0].toUpperCase();
+  }
+
+  function renderWidget(profile) {
+    const box = document.getElementById('widgetBox');
+    const type = profile.widget_type;
+    const value = profile.widget_value;
+    if (!type || type === 'none' || !value) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    if (type === 'custom_image' || type === 'gif') {
+      box.innerHTML = `<div class="widget-title">${type === 'gif' ? 'GIF' : 'Image'}</div><img src="${value}" alt="">`;
+    } else if (type === 'extra_bio') {
+      box.innerHTML = `<div class="widget-title">More About Me</div><div>${value}</div>`;
+    } else if (type === 'country') {
+      box.innerHTML = `<div class="widget-title">Country</div><div>📍 ${value}</div>`;
+    } else if (type === 'timezone') {
+      let timeStr = value;
+      try { timeStr = new Date().toLocaleTimeString('en-US', { timeZone: value, hour: '2-digit', minute: '2-digit' }); } catch (e) {}
+      box.innerHTML = `<div class="widget-title">Timezone</div><div>🕐 ${value} (${timeStr} now)</div>`;
+    }
+  }
+
+  async function computeMutualFriends(viewedId, myId) {
+    if (viewedId === myId) return [];
+    const { data: theirLinks } = await supabaseClient.from('friends').select('*')
+      .or(`user_id.eq.${viewedId},friend_id.eq.${viewedId}`).eq('status', 'accepted');
+    const { data: myLinks } = await supabaseClient.from('friends').select('*')
+      .or(`user_id.eq.${myId},friend_id.eq.${myId}`).eq('status', 'accepted');
+    if (!theirLinks || !myLinks) return [];
+    const theirFriendIds = new Set(theirLinks.map(l => l.user_id === viewedId ? l.friend_id : l.user_id));
+    const myFriendIds = myLinks.map(l => l.user_id === myId ? l.friend_id : l.user_id);
+    const mutualIds = myFriendIds.filter(id => theirFriendIds.has(id) && id !== myId && id !== viewedId);
+    if (mutualIds.length === 0) return [];
+    const { data: mutualProfiles } = await supabaseClient.from('profiles').select('id, username, display_name').in('id', mutualIds);
+    return (mutualProfiles || []).filter(p => p.username !== 'Bubbles');
+  }
+
+  async function checkOnlineStatus(userId) {
+    return new Promise(resolve => {
+      const ch = supabaseClient.channel('presence-status', { config: { presence: { key: 'viewer-' + userId } } });
+      ch.on('presence', { event: 'sync' }, () => {
+        const state = ch.presenceState();
+        const entries = state[userId];
+        const status = entries && entries.length ? entries[entries.length - 1].status : null;
+        supabaseClient.removeChannel(ch);
+        resolve(status);
+      });
+      ch.subscribe();
+      setTimeout(() => { try { supabaseClient.removeChannel(ch); } catch(e){} resolve(null); }, 1200);
+    });
+  }
+
+  function applyProfileColors(profile) {
+    if (profile.profile_accent_color) {
+      const accent = profile.profile_accent_color;
+      document.documentElement.style.setProperty('--topbar-bg',
+        `linear-gradient(180deg, ${shadeColor(accent, 60)} 0%, ${accent} 55%, ${shadeColor(accent, -40)} 100%)`);
+    }
+    if (profile.profile_bg_color) {
+      document.body.style.background = profile.profile_bg_color;
+    }
+  }
+
+  async function renderProfile(profile) {
+    viewedProfile = profile;
+    document.getElementById('profileAvatar').innerHTML = avatarMarkup(profile);
+    document.getElementById('profileUsername').textContent = '@' + profile.username;
+    document.getElementById('profilePronouns').textContent = profile.pronouns || '';
+    document.getElementById('profileDisplayName').textContent = profile.display_name || profile.username;
+    const bioEl = document.getElementById('profileBio');
+    if (profile.bio) { bioEl.textContent = profile.bio; bioEl.classList.remove('empty'); }
+    else { bioEl.textContent = 'No bio yet.'; bioEl.classList.add('empty'); }
+    renderWidget(profile);
+    applyProfileColors(profile);
+
+    checkOnlineStatus(profile.id).then(status => {
+      const dot = document.getElementById('profileStatusDot');
+      const colorMap = { online: 'var(--status-online)', idle: 'var(--status-idle)', dnd: 'var(--status-dnd)' };
+      if (status && colorMap[status]) {
+        dot.style.setProperty('--status-color', colorMap[status]);
+        dot.style.setProperty('--status-display', 'block');
+      } else {
+        dot.style.setProperty('--status-display', 'none');
+      }
+    });
+
+    if (!isOwnProfile && me) {
+      const mutuals = await computeMutualFriends(profile.id, me.id);
+      const line = document.getElementById('mutualLine');
+      if (mutuals.length > 0) {
+        const first = mutuals[0];
+        const extra = mutuals.length - 1;
+        const name = first.display_name || first.username;
+        line.style.display = 'block';
+        line.textContent = `${profile.display_name || profile.username} knows ${name}` + (extra > 0 ? ` +${extra} more!` : '!');
+      } else {
+        line.style.display = 'none';
+      }
+    }
+  }
+
+  function widgetValueField(type, currentValue) {
+    const wrap = document.getElementById('widgetValueWrap');
+    if (type === 'none') { wrap.innerHTML = ''; return; }
+    if (type === 'custom_image' || type === 'gif') {
+      wrap.innerHTML = `
+        <label class="editor-label">${type === 'gif' ? 'GIF' : 'Image'}</label>
+        <input type="file" id="widgetFileInput" accept="image/*" style="display:none">
+        <button class="editor-btn" id="widgetChooseBtn" type="button">Choose File</button>
+        <div class="editor-save-note" id="widgetUploadStatus"></div>`;
+      document.getElementById('widgetChooseBtn').addEventListener('click', () => document.getElementById('widgetFileInput').click());
+      document.getElementById('widgetFileInput').addEventListener('change', async e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const status = document.getElementById('widgetUploadStatus');
+        status.textContent = 'Uploading…';
+        try {
+          const ext = file.name.split('.').pop();
+          const path = `widgets/${me.id}-${Date.now()}.${ext}`;
+          const { error: upErr } = await supabaseClient.storage.from('chat-uploads').upload(path, file);
+          if (upErr) throw upErr;
+          const { data: urlData } = supabaseClient.storage.from('chat-uploads').getPublicUrl(path);
+          wrap.dataset.value = urlData.publicUrl;
+          status.textContent = 'Uploaded!';
+        } catch (err) {
+          status.textContent = 'Failed: ' + err.message;
+        }
+      });
+      wrap.dataset.value = currentValue || '';
+    } else if (type === 'extra_bio') {
+      wrap.innerHTML = `<label class="editor-label">Extra Bio Text</label><textarea id="widgetTextInput" maxlength="200"></textarea>`;
+      document.getElementById('widgetTextInput').value = currentValue || '';
+    } else if (type === 'country') {
+      wrap.innerHTML = `<label class="editor-label">Country</label><input type="text" id="widgetTextInput" maxlength="56">`;
+      document.getElementById('widgetTextInput').value = currentValue || '';
+    } else if (type === 'timezone') {
+      let options = '';
+      try {
+        Intl.supportedValuesOf('timeZone').forEach(tz => { options += `<option value="${tz}">${tz}</option>`; });
+        wrap.innerHTML = `<label class="editor-label">Timezone</label><select id="widgetTextInput">${options}</select>`;
+        document.getElementById('widgetTextInput').value = currentValue || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      } catch (e) {
+        wrap.innerHTML = `<label class="editor-label">Timezone</label><input type="text" id="widgetTextInput" placeholder="e.g. America/New_York">`;
+        document.getElementById('widgetTextInput').value = currentValue || '';
+      }
+    }
+  }
+
+  function getWidgetValueFromForm(type) {
+    const wrap = document.getElementById('widgetValueWrap');
+    if (type === 'custom_image' || type === 'gif') return wrap.dataset.value || '';
+    const input = document.getElementById('widgetTextInput');
+    return input ? input.value : '';
+  }
+
+  function setupEditor(profile) {
+    document.getElementById('editorCard').style.display = 'block';
+    document.getElementById('editDisplayName').value = profile.display_name || '';
+    document.getElementById('editPronouns').value = profile.pronouns || '';
+    document.getElementById('editBio').value = profile.bio || '';
+    document.getElementById('editBgColor').value = profile.profile_bg_color || '#6fc3f0';
+    document.getElementById('editAccentColor').value = profile.profile_accent_color || '#a8e063';
+    document.getElementById('editWidgetType').value = profile.widget_type || 'none';
+    widgetValueField(profile.widget_type || 'none', profile.widget_value);
+
+    document.getElementById('editWidgetType').addEventListener('change', e => {
+      widgetValueField(e.target.value, '');
+    });
+
+    document.getElementById('saveProfileBtn').addEventListener('click', async () => {
+      const status = document.getElementById('saveStatus');
+      status.textContent = 'Saving…';
+      const widgetType = document.getElementById('editWidgetType').value;
+      const updates = {
+        display_name: document.getElementById('editDisplayName').value.trim() || profile.username,
+        pronouns: document.getElementById('editPronouns').value.trim(),
+        bio: document.getElementById('editBio').value.trim(),
+        profile_bg_color: document.getElementById('editBgColor').value,
+        profile_accent_color: document.getElementById('editAccentColor').value,
+        widget_type: widgetType,
+        widget_value: getWidgetValueFromForm(widgetType)
+      };
+      const { error } = await supabaseClient.from('profiles').update(updates).eq('id', me.id);
+      if (error) { status.textContent = 'Failed: ' + error.message; return; }
+      status.textContent = 'Saved!';
+      Object.assign(profile, updates);
+      renderProfile(profile);
+    });
+  }
+
+  document.getElementById('shareBtn').addEventListener('click', () => {
+    const link = `${window.location.origin}/@${viewedProfile.username}`;
+    navigator.clipboard.writeText(link).then(() => {
+      const toast = document.getElementById('shareToast');
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1800);
+    }).catch(() => {});
+  });
+
+  async function init() {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session) { window.location.href = 'index.html'; return; }
+
+    const { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', session.user.id).single();
+    me = { id: session.user.id, username: profile ? profile.username : 'You' };
+    meProfile = profile;
+
+    initPageTheme();
+
+    let username = getUsernameFromUrl();
+    if (!username) username = me.username;
+
+    const { data: target } = await supabaseClient.from('profiles').select('*').ilike('username', username).maybeSingle();
+    if (!target) {
+      document.getElementById('notFound').style.display = 'block';
+      return;
+    }
+
+    isOwnProfile = target.id === me.id;
+    document.getElementById('pageRoot').style.display = 'grid';
+    if (!isOwnProfile) document.getElementById('pageRoot').classList.add('solo');
+
+    await renderProfile(target);
+    if (isOwnProfile) setupEditor(target);
+  }
+
+  init();
+</script>
+
+</body>
+</html>

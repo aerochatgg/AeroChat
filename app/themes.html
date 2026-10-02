@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AeroChat - Themes</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="sounds.js"></script>
+<script src="theme-engine.js"></script>
+<style>
+  :root {
+    --sky-top: #bfe9ff;
+    --sky-mid: #6fc3f0;
+    --sky-deep: #0a4d8c;
+    --glass: rgba(255,255,255,0.38);
+    --glass-strong: rgba(255,255,255,0.62);
+    --glass-border: rgba(255,255,255,0.75);
+    --ink: #0b3a5c;
+    --ink-soft: #3d6b8c;
+    --lime: #a8e063;
+    --lime-dark: #6fae2f;
+    --aqua-accent: #1fa9a0;
+    --shadow: 0 8px 32px rgba(10,60,100,0.25);
+    --topbar-bg: linear-gradient(180deg, #d4f77e 0%, #a8e063 55%, #7fbf3a 100%);
+    --msg-bg: rgba(255,255,255,0.62);
+    --msg-border: rgba(255,255,255,0.85);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    font-family: 'Nunito Sans', sans-serif;
+    color: var(--ink);
+    overflow: hidden;
+  }
+  body {
+    background: radial-gradient(ellipse at 50% -10%, var(--sky-top) 0%, var(--sky-mid) 45%, var(--sky-deep) 100%);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    transition: background 0.4s ease;
+  }
+  h1, h2, h3, .brand { font-family: 'Quicksand', sans-serif; font-weight: 700; }
+
+  .seaweed-layer { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .bubble-layer { position: fixed; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }
+  .bubble {
+    position: absolute; bottom: -120px; border-radius: 50%;
+    background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.9), rgba(255,255,255,0.05) 60%, rgba(255,255,255,0.15) 100%);
+    box-shadow: inset 0 0 12px rgba(255,255,255,0.4);
+    animation: rise linear infinite; opacity: 0.5; will-change: transform;
+  }
+  @keyframes rise {
+    0% { transform: translateY(0) translateX(0); opacity: 0; }
+    10% { opacity: 0.5; }
+    100% { transform: translateY(-115vh) translateX(30px); opacity: 0; }
+  }
+
+  .topbar {
+    position: relative; z-index: 3; flex-shrink: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 28px 26px;
+    background: var(--topbar-bg);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--lime-dark) 25%, transparent);
+    border-bottom-left-radius: 50% 18px;
+    border-bottom-right-radius: 50% 18px;
+    transition: background 0.4s ease;
+  }
+  .topbar::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 55%;
+    background: linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0));
+    border-bottom-left-radius: 50% 18px; border-bottom-right-radius: 50% 18px;
+    pointer-events: none;
+  }
+  .pill-nav {
+    position: relative; z-index: 1; padding: 9px 22px; border-radius: 999px;
+    background: linear-gradient(160deg, rgba(255,255,255,0.35), rgba(255,255,255,0.05));
+    border: 1px solid rgba(255,255,255,0.7); color: #fff;
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 15px;
+    text-shadow: 0 1px 2px rgba(0,60,0,0.3);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 3px 6px rgba(0,0,0,0.1);
+    text-decoration: none; cursor: pointer; border: none;
+  }
+
+  .glass {
+    background: var(--glass);
+    backdrop-filter: blur(12px) saturate(150%);
+    -webkit-backdrop-filter: blur(12px) saturate(150%);
+    border: 1px solid var(--glass-border);
+    border-radius: 22px;
+    box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.6);
+    transition: background 0.4s ease, border-color 0.4s ease;
+  }
+
+  .layout {
+    position: relative; z-index: 2; flex: 1; min-height: 0;
+    display: grid; grid-template-columns: 280px 1fr; gap: 14px; padding: 14px;
+  }
+  @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } }
+
+  .theme-list { padding: 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+  .theme-list-label { font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 13px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+  .theme-row {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px;
+    background: rgba(255,255,255,0.45); cursor: pointer; border: 2px solid transparent;
+    transition: background 0.15s ease, transform 0.12s ease;
+  }
+  .theme-row:hover { background: rgba(255,255,255,0.65); }
+  .theme-row:active { transform: scale(0.98); }
+  .theme-row.active { border-color: var(--aqua-accent); background: rgba(255,255,255,0.75); }
+  .theme-swatch { width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0; box-shadow: inset 0 2px 3px rgba(255,255,255,0.6), 0 2px 6px rgba(0,0,0,0.2); }
+  .theme-row-name { font-weight: 700; font-size: 14.5px; }
+  .theme-row-check { margin-left: auto; color: var(--aqua-accent); font-weight: 900; opacity: 0; }
+  .theme-row.active .theme-row-check { opacity: 1; }
+
+  .preview-panel { padding: 26px; overflow-y: auto; }
+  .preview-heading { font-size: 22px; margin: 0 0 6px; }
+  .preview-sub { color: var(--ink-soft); font-size: 13.5px; margin: 0 0 22px; }
+
+  .preview-block { margin-bottom: 26px; }
+  .preview-block-label { font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 12.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+
+  .mock-friend-list { display: flex; flex-direction: column; gap: 8px; max-width: 320px; }
+  .mock-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 16px; background: rgba(255,255,255,0.45); }
+  .mock-avatar {
+    width: 36px; height: 36px; border-radius: 50%; position: relative; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700;
+    font-family: 'Quicksand', sans-serif; font-size: 14px; box-shadow: inset 0 2px 3px rgba(255,255,255,0.6);
+  }
+  .mock-avatar::after { content: ""; position: absolute; width: 10px; height: 10px; border-radius: 50%; background: #bfe9ff; border: 2px solid #eef9ff; bottom: -1px; right: -1px; }
+  .mock-name { font-weight: 700; font-size: 14.5px; }
+
+  .mock-messages { display: flex; flex-direction: column; gap: 10px; max-width: 380px; }
+  .mock-msg-row { display: flex; gap: 8px; max-width: 80%; }
+  .mock-msg-row.mine { align-self: flex-end; flex-direction: row-reverse; }
+  .mock-bubble {
+    padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.4;
+    background: var(--msg-bg); border: 1px solid var(--msg-border);
+    box-shadow: 0 3px 10px rgba(10,60,100,0.12), inset 0 1px 0 rgba(255,255,255,0.5);
+    transition: background 0.4s ease, border-color 0.4s ease;
+  }
+  .mock-msg-row.mine .mock-bubble { background: linear-gradient(160deg, color-mix(in srgb, var(--sky-top) 60%, white), color-mix(in srgb, var(--sky-mid) 40%, white)); }
+
+  .mock-btn-row { display: flex; gap: 12px; }
+  .mock-btn {
+    border: none; cursor: pointer; padding: 10px 22px; border-radius: 14px;
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 14px; color: #fff;
+    background: linear-gradient(160deg, var(--lime), var(--lime-dark));
+    box-shadow: inset 0 2px 2px rgba(255,255,255,0.6), 0 3px 8px rgba(0,0,0,0.2);
+  }
+  .mock-btn.secondary { background: linear-gradient(160deg, var(--sky-mid), var(--sky-deep)); }
+  .mock-select {
+    width: 100%; padding: 9px 11px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.8);
+    background: var(--glass-strong); font-family: 'Nunito Sans', sans-serif; font-size: 13px; color: var(--ink);
+    cursor: pointer; outline: none;
+  }
+  .mock-color { width: 100%; height: 36px; border: none; border-radius: 10px; cursor: pointer; background: none; }
+</style>
+</head>
+<body>
+
+<div class="seaweed-layer" id="seaweedLayer"></div>
+<div class="bubble-layer" id="bubbleLayer"></div>
+
+<div class="topbar">
+  <a class="pill-nav" href="home.html">⌂ Home</a>
+  <a class="pill-nav" href="dms.html">💬 Chats</a>
+</div>
+
+<div class="layout">
+  <div class="theme-list glass">
+    <div class="theme-list-label">Themes</div>
+    <div id="themeRows"></div>
+  </div>
+
+  <div class="preview-panel glass">
+    <h2 class="preview-heading">Theme Preview</h2>
+    <p class="preview-sub">Pick a theme on the left - everything here (and across the whole app) updates live and saves automatically.</p>
+
+    <div class="preview-block" id="customEditorBlock" style="display:none;">
+      <div class="preview-block-label">Effect</div>
+      <select id="customEffectSelect" class="mock-select">
+        <option value="aero">Aero - floating bubbles</option>
+        <option value="dorfic">DORFic - glass shine, less transparent</option>
+        <option value="darkaero">Dark Aero - floating squares</option>
+        <option value="aqua">Aqua - water, seaweed &amp; fish</option>
+      </select>
+
+      <div class="preview-block-label" style="margin-top:16px;">Button Color</div>
+      <input type="color" id="customButtonColor" class="mock-color">
+
+      <div class="preview-block-label" style="margin-top:16px;">Accent Color (Topbar &amp; UI)</div>
+      <input type="color" id="customAccentColor" class="mock-color">
+
+      <div class="preview-block-label" style="margin-top:16px;">Background Color</div>
+      <input type="color" id="customBgColor" class="mock-color">
+    </div>
+
+    <div class="preview-block">
+      <div class="preview-block-label">Friend List</div>
+      <div class="mock-friend-list">
+        <div class="mock-row">
+          <div class="mock-avatar" style="background:linear-gradient(160deg,#7fe3d0,#1fa9a0)">R</div>
+          <div class="mock-name">Reef</div>
+        </div>
+        <div class="mock-row">
+          <div class="mock-avatar" style="background:linear-gradient(160deg,#ffd8a8,#ff9f5a)">M</div>
+          <div class="mock-name">Marisol</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="preview-block">
+      <div class="preview-block-label">Messages</div>
+      <div class="mock-messages">
+        <div class="mock-msg-row">
+          <div class="mock-bubble">hey! check out this new theme 👀</div>
+        </div>
+        <div class="mock-msg-row mine">
+          <div class="mock-bubble">oh this looks awesome</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="preview-block">
+      <div class="preview-block-label">Buttons</div>
+      <div class="mock-btn-row">
+        <button class="mock-btn">Add</button>
+        <button class="mock-btn secondary">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentThemeId = 'aero';
+  let customSettings = { effect: 'aero', buttonColor: '#a8e063', accentColor: '#a8e063', bgColor: '#6fc3f0' };
+
+  function renderThemeRows() {
+    const container = document.getElementById('themeRows');
+    container.innerHTML = '';
+    Object.entries(THEMES).forEach(([id, theme]) => {
+      const row = document.createElement('div');
+      row.className = 'theme-row' + (id === currentThemeId ? ' active' : '');
+      row.innerHTML = `
+        <div class="theme-swatch" style="background: linear-gradient(135deg, ${theme.swatch[0]}, ${theme.swatch[1]})"></div>
+        <div class="theme-row-name">${theme.label}</div>
+        <div class="theme-row-check">✓</div>`;
+      row.addEventListener('click', () => selectTheme(id));
+      container.appendChild(row);
+    });
+
+    const customRow = document.createElement('div');
+    customRow.className = 'theme-row' + (currentThemeId === 'custom' ? ' active' : '');
+    customRow.innerHTML = `
+      <div class="theme-swatch" style="background: linear-gradient(135deg, ${customSettings.buttonColor}, ${customSettings.accentColor})"></div>
+      <div class="theme-row-name">Custom</div>
+      <div class="theme-row-check">✓</div>`;
+    customRow.addEventListener('click', () => selectTheme('custom'));
+    container.appendChild(customRow);
+  }
+
+  function updateCustomEditorFields() {
+    document.getElementById('customEffectSelect').value = customSettings.effect;
+    document.getElementById('customButtonColor').value = customSettings.buttonColor;
+    document.getElementById('customAccentColor').value = customSettings.accentColor;
+    document.getElementById('customBgColor').value = customSettings.bgColor;
+  }
+
+  function applyAndSaveCustom() {
+    applyCustomThemeVars(customSettings);
+    applyCustomThemeBackground(customSettings);
+    saveCustomSettings(customSettings);
+  }
+
+  document.getElementById('customEffectSelect').addEventListener('change', e => {
+    customSettings.effect = e.target.value;
+    renderThemeRows();
+    applyAndSaveCustom();
+  });
+  document.getElementById('customButtonColor').addEventListener('input', e => {
+    customSettings.buttonColor = e.target.value;
+    renderThemeRows();
+    applyCustomThemeVars(customSettings);
+  });
+  document.getElementById('customButtonColor').addEventListener('change', () => saveCustomSettings(customSettings));
+  document.getElementById('customAccentColor').addEventListener('input', e => {
+    customSettings.accentColor = e.target.value;
+    renderThemeRows();
+    applyCustomThemeVars(customSettings);
+  });
+  document.getElementById('customAccentColor').addEventListener('change', () => saveCustomSettings(customSettings));
+  document.getElementById('customBgColor').addEventListener('input', e => {
+    customSettings.bgColor = e.target.value;
+    applyCustomThemeVars(customSettings);
+  });
+  document.getElementById('customBgColor').addEventListener('change', () => saveCustomSettings(customSettings));
+
+  async function selectTheme(id) {
+    if (id === currentThemeId) { renderThemeRows(); return; }
+    currentThemeId = id;
+    document.getElementById('customEditorBlock').style.display = id === 'custom' ? 'block' : 'none';
+    if (id === 'custom') {
+      updateCustomEditorFields();
+      applyCustomThemeVars(customSettings);
+      applyCustomThemeBackground(customSettings);
+    } else {
+      applyThemeVars(id);
+      applyThemeBackground(id);
+    }
+    renderThemeRows();
+    await saveThemeId(id);
+  }
+
+  async function init() {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session) { window.location.href = 'index.html'; return; }
+    currentThemeId = await getSavedThemeId();
+    const saved = await getSavedCustomSettings();
+    if (saved) customSettings = saved;
+    updateCustomEditorFields();
+
+    if (currentThemeId === 'custom') {
+      document.getElementById('customEditorBlock').style.display = 'block';
+      applyCustomThemeVars(customSettings);
+      applyCustomThemeBackground(customSettings);
+    } else {
+      applyThemeVars(currentThemeId);
+      applyThemeBackground(currentThemeId);
+    }
+    renderThemeRows();
+  }
+
+  init();
+</script>
+
+</body>
+</html>

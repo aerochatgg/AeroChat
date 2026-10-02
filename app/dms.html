@@ -1,0 +1,2668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AeroChat - DMs</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="sounds.js"></script>
+<script src="theme-engine.js"></script>
+<style>
+  :root {
+    --sky-top: #bfe9ff;
+    --sky-mid: #6fc3f0;
+    --sky-deep: #0a4d8c;
+    --glass: rgba(255,255,255,0.38);
+    --glass-strong: rgba(255,255,255,0.62);
+    --glass-border: rgba(255,255,255,0.75);
+    --ink: #0b3a5c;
+    --ink-soft: #3d6b8c;
+    --lime: #a8e063;
+    --lime-dark: #6fae2f;
+    --aqua-accent: #1fa9a0;
+    --shadow: 0 8px 32px rgba(10,60,100,0.25);
+    --status-online: #bfe9ff;
+    --status-idle: #ffe98a;
+    --status-dnd: #e0261e;
+    --status-offline: #9db3c4;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    font-family: 'Nunito Sans', sans-serif;
+    color: var(--ink);
+    overflow: hidden;
+  }
+  body {
+    background: radial-gradient(ellipse at 50% -10%, var(--sky-top) 0%, var(--sky-mid) 45%, var(--sky-deep) 100%);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  h1, h2, h3, .brand { font-family: 'Quicksand', sans-serif; font-weight: 700; }
+
+  .seaweed-layer { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .bubble-layer { position: fixed; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }
+  .bubble {
+    position: absolute; bottom: -120px; border-radius: 50%;
+    background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.9), rgba(255,255,255,0.05) 60%, rgba(255,255,255,0.15) 100%);
+    box-shadow: inset 0 0 12px rgba(255,255,255,0.4);
+    animation: rise linear infinite; opacity: 0.5;
+    will-change: transform;
+  }
+  @keyframes rise {
+    0% { transform: translateY(0) translateX(0); opacity: 0; }
+    10% { opacity: 0.5; }
+    100% { transform: translateY(-115vh) translateX(30px); opacity: 0; }
+  }
+
+  .topbar {
+    position: relative; z-index: 2; flex-shrink: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 28px 26px;
+    background: var(--topbar-bg, linear-gradient(180deg, #d4f77e 0%, #a8e063 55%, #7fbf3a 100%));
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--lime-dark) 25%, transparent);
+    border-bottom-left-radius: 50% 18px;
+    border-bottom-right-radius: 50% 18px;
+    transition: background 0.4s ease;
+  }
+  .topbar::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 55%;
+    background: linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0));
+    border-bottom-left-radius: 50% 18px; border-bottom-right-radius: 50% 18px;
+    pointer-events: none;
+  }
+  .pill-nav {
+    position: relative; z-index: 1; padding: 9px 22px; border-radius: 999px;
+    background: linear-gradient(160deg, rgba(255,255,255,0.35), rgba(255,255,255,0.05));
+    border: 1px solid rgba(255,255,255,0.7); color: #fff;
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 15px;
+    text-shadow: 0 1px 2px rgba(0,60,0,0.3);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 3px 6px rgba(0,0,0,0.1);
+    text-decoration: none; cursor: pointer; border: none;
+  }
+  .pill-nav.icon-only { padding: 9px 14px; font-size: 15px; }
+  .topbar-right { display: flex; gap: 10px; align-items: center; position: relative; z-index: 1; }
+  .me-pill {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 14px 6px 6px; border-radius: 999px;
+    background: rgba(255,255,255,0.3); border: 1px solid rgba(255,255,255,0.7);
+    color: #fff; font-weight: 700; font-size: 14px; text-shadow: 0 1px 2px rgba(0,60,0,0.3);
+  }
+  .me-pill .avatar { width: 30px; height: 30px; font-size: 13px; }
+
+  .app {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    display: grid; grid-template-columns: 300px 1fr; gap: 14px;
+    padding: 14px;
+  }
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; }
+    .friends-panel.hide-mobile { display: none; }
+  }
+
+  .glass {
+    background: var(--glass);
+    backdrop-filter: blur(12px) saturate(150%);
+    -webkit-backdrop-filter: blur(12px) saturate(150%);
+    border: 1px solid var(--glass-border);
+    border-radius: 22px;
+    box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.6);
+    transition: background 0.4s ease, border-color 0.4s ease;
+  }
+
+  .friends-panel { display: flex; flex-direction: column; padding: 16px; min-height: 0; }
+  .add-row { display: flex; gap: 8px; margin-bottom: 14px; }
+  .add-row input {
+    flex: 1; padding: 10px 14px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.8); background: var(--glass-strong);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+    font-family: 'Nunito Sans', sans-serif; font-size: 13.5px; color: var(--ink); outline: none;
+  }
+  .add-row input::placeholder { color: var(--ink-soft); }
+  .add-btn {
+    border: none; cursor: pointer; padding: 0 18px; border-radius: 14px;
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 14px; color: #fff;
+    background: linear-gradient(160deg, var(--lime), var(--lime-dark));
+    box-shadow: inset 0 2px 2px rgba(255,255,255,0.6), 0 3px 8px color-mix(in srgb, var(--lime-dark) 40%, transparent);
+    transition: transform 0.1s ease;
+  }
+  .add-btn:active { transform: scale(0.92); }
+  .add-error { font-size: 11.5px; color: #3e6c8d; font-weight: 700; min-height: 14px; margin: -8px 0 8px 2px; }
+
+  .field {
+    width: 100%; padding: 12px 14px; border-radius: 14px; margin-bottom: 8px;
+    border: 1px solid rgba(255,255,255,0.8); background: var(--glass-strong);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+    font-family: 'Nunito Sans', sans-serif; font-size: 13.5px; color: var(--ink); outline: none;
+  }
+  .field::placeholder { color: var(--ink-soft); }
+
+  .broadcast-panel {
+    margin-bottom: 14px; padding: 12px; border-radius: 16px;
+    background: linear-gradient(160deg, rgba(255,224,138,0.5), rgba(255,159,90,0.35));
+    border: 1px solid rgba(255,255,255,0.7);
+  }
+  .broadcast-label { font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 13px; color: var(--ink); margin-bottom: 8px; }
+  .bot-badge { font-size: 11px; margin-left: 4px; }
+  .group-badge { font-size: 11px; margin-left: 4px; }
+
+  .text-link-btn {
+    border: none; background: none; cursor: pointer; padding: 4px 2px 10px;
+    color: var(--aqua-accent); font-family: 'Quicksand', sans-serif; font-weight: 700;
+    font-size: 12.5px; text-align: left;
+  }
+  .text-link-btn:hover { text-decoration: underline; }
+
+  .member-count { font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+  .call-icon-btn.invite { background: linear-gradient(160deg, #6fd6ff, #1a8fd1); font-size: 15px; }
+
+  .invite-card {
+    padding: 16px 20px; border-radius: 20px; max-width: 300px;
+    background: linear-gradient(160deg, rgba(111,197,255,0.9), rgba(31,120,190,0.85));
+    color: #fff; text-align: center; position: relative;
+    box-shadow: 0 6px 18px rgba(10,60,100,0.25), inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+  .invite-card .invite-title { font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 15px; line-height: 1.35; margin-bottom: 12px; }
+  .invite-card .invite-join-btn {
+    border: none; cursor: pointer; padding: 9px 26px; border-radius: 999px;
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 15px; color: #fff;
+    background: linear-gradient(160deg, var(--lime), var(--lime-dark));
+    box-shadow: inset 0 2px 2px rgba(255,255,255,0.5), 0 3px 8px rgba(0,0,0,0.2);
+  }
+  .invite-card .invite-join-btn:disabled { opacity: 0.6; cursor: default; }
+  .invite-card .invite-dismiss {
+    position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--status-dnd); color: #fff; border: 2px solid #fff; cursor: pointer;
+    font-size: 11px; display: flex; align-items: center; justify-content: center;
+  }
+
+  .friend-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .friend-row {
+    display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 16px;
+    background: rgba(255,255,255,0.45); cursor: pointer;
+    transition: background 0.15s ease, transform 0.12s ease;
+  }
+  .friend-row:hover { background: rgba(255,255,255,0.65); }
+  .friend-row:active { transform: scale(0.98) translateX(4px); }
+  .friend-row.active {
+    background: linear-gradient(90deg, rgba(255,255,255,0.85), rgba(255,255,255,0.4));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+  }
+  .friend-row.offline { opacity: 0.55; filter: grayscale(65%); }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%; position: relative; flex-shrink: 0;
+    box-shadow: inset 0 2px 3px rgba(255,255,255,0.6);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-family: 'Quicksand', sans-serif; font-size: 14px;
+    overflow: hidden;
+  }
+  .avatar::after {
+    content: ""; position: absolute; width: 10px; height: 10px; border-radius: 50%;
+    background: var(--status-color, var(--status-offline));
+    display: var(--status-display, block);
+    border: 2px solid #eef9ff; bottom: -1px; right: -1px;
+  }
+  .avatar.no-status::after { display: none; }
+  .avatar-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+  .friend-row .name { font-weight: 700; font-size: 14.5px; }
+  .empty-note { color: var(--ink-soft); font-size: 13px; padding: 10px 4px; line-height: 1.5; }
+
+  .chat-panel { display: flex; flex-direction: column; min-height: 0; }
+  .chat-header {
+    display: flex; align-items: center; gap: 10px; padding: 16px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.6); font-weight: 700; flex-shrink: 0;
+  }
+  .chat-header .avatar { width: 30px; height: 30px; }
+  .no-chat {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    color: var(--ink-soft); font-size: 15px; text-align: center; padding: 30px;
+  }
+
+  @keyframes chatFadeOut { to { opacity: 0; transform: translateY(6px); } }
+  @keyframes chatPopIn { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  .chat-fade-out { animation: chatFadeOut 0.14s ease forwards; }
+  .chat-pop-in { animation: chatPopIn 0.28s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+  @keyframes msgPopMine {
+    0% { opacity: 0; transform: translate(36px, 26px) scale(0.4); }
+    60% { opacity: 1; transform: translate(-3px, -2px) scale(1.03); }
+    100% { opacity: 1; transform: translate(0,0) scale(1); }
+  }
+  @keyframes msgPopTheirs {
+    0% { opacity: 0; transform: translate(-16px, 6px) scale(0.85); }
+    100% { opacity: 1; transform: translate(0,0) scale(1); }
+  }
+  .msg-row.pop-mine { animation: msgPopMine 0.38s cubic-bezier(0.34,1.56,0.64,1) both; transform-origin: bottom right; }
+  .msg-row.pop-theirs { animation: msgPopTheirs 0.3s ease-out both; }
+
+  .messages { flex: 1; overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 12px; }
+  .msg-row { display: flex; gap: 10px; max-width: 75%; }
+  .msg-row.mine { align-self: flex-end; flex-direction: row-reverse; }
+  .msg-row .avatar { width: 32px; height: 32px; flex-shrink: 0; }
+  .msg-bubble {
+    padding: 10px 14px; border-radius: 16px; font-size: 14.5px; line-height: 1.4;
+    background: var(--msg-bg, var(--glass-strong)); border: 1px solid var(--msg-border, rgba(255,255,255,0.85));
+    box-shadow: 0 3px 10px rgba(10,60,100,0.12), inset 0 1px 0 rgba(255,255,255,0.9);
+    transition: background 0.4s ease, border-color 0.4s ease;
+  }
+  .msg-row.mine .msg-bubble { background: linear-gradient(160deg, color-mix(in srgb, var(--sky-top) 55%, white), color-mix(in srgb, var(--sky-mid) 35%, white)); }
+  .msg-time { font-size: 10.5px; color: var(--ink-soft); margin-top: 3px; }
+  .msg-image {
+    max-width: 260px; max-height: 260px; border-radius: 14px; display: block;
+    box-shadow: 0 3px 10px rgba(10,60,100,0.18), inset 0 1px 0 rgba(255,255,255,0.5);
+    cursor: pointer; object-fit: cover;
+  }
+
+  .composer {
+    margin: 14px 20px 18px; display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    padding: 6px 8px 6px 16px; border-radius: 22px;
+    background: var(--glass-strong); border: 1px solid rgba(255,255,255,0.85);
+    box-shadow: 0 3px 12px rgba(10,60,100,0.15), inset 0 1px 0 rgba(255,255,255,0.9);
+  }
+  .composer input {
+    flex: 1; border: none; background: transparent; outline: none;
+    font-family: 'Nunito Sans', sans-serif; font-size: 14.5px; color: var(--ink); padding: 10px 0;
+  }
+  .composer input::placeholder { color: var(--ink-soft); }
+  .send-btn {
+    width: 38px; height: 38px; border-radius: 50%; border: none; cursor: pointer;
+    background: linear-gradient(160deg, var(--lime), var(--lime-dark));
+    box-shadow: 0 3px 8px color-mix(in srgb, var(--lime-dark) 50%, transparent), inset 0 2px 2px rgba(255,255,255,0.6);
+    color: #fff; font-size: 16px; display: flex; align-items: center; justify-content: center;
+  }
+  .attach-btn {
+    width: 32px; height: 32px; border-radius: 50%; border: none; cursor: pointer; flex-shrink: 0;
+    background: rgba(255,255,255,0.6); box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+    font-size: 14px; display: flex; align-items: center; justify-content: center;
+    transition: transform 0.15s ease;
+  }
+  .attach-btn:hover { transform: scale(1.08); background: rgba(255,255,255,0.85); }
+  .attach-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.6); border-radius: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  .header-actions { margin-left: auto; display: flex; gap: 8px; }
+  .call-icon-btn {
+    width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer;
+    background: linear-gradient(160deg, #6fd6ff, #1a8fd1);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 3px 8px rgba(10,60,100,0.3);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.15s ease;
+  }
+  .call-icon-btn.video { background: linear-gradient(160deg, var(--lime), var(--lime-dark)); }
+  .call-icon-btn img { width: 17px; height: 17px; object-fit: contain; }
+  .call-icon-btn:hover { transform: scale(1.08); }
+
+  .call-overlay {
+    display: none; position: fixed; inset: 0; z-index: 50;
+    align-items: center; justify-content: center;
+    background: rgba(10,60,100,0.35); backdrop-filter: blur(6px);
+  }
+  .call-overlay.show { display: flex; }
+
+  .call-card {
+    padding: 36px 40px; display: flex; flex-direction: column; align-items: center; gap: 10px;
+    min-width: 260px;
+  }
+  .call-avatar {
+    width: 84px; height: 84px; border-radius: 50%; box-shadow: inset 0 3px 5px rgba(255,255,255,0.6), 0 4px 14px rgba(10,60,100,0.3);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 32px;
+    animation: pulse 1.6s ease-in-out infinite; overflow: hidden;
+  }
+  @keyframes pulse { 0%,100% { box-shadow: inset 0 3px 5px rgba(255,255,255,0.6), 0 0 0 0 color-mix(in srgb, var(--lime-dark) 40%, transparent); } 50% { box-shadow: inset 0 3px 5px rgba(255,255,255,0.6), 0 0 0 14px transparent; } }
+  .call-name { font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 19px; color: var(--ink); }
+  .call-status { font-size: 13.5px; color: var(--ink-soft); }
+  .call-actions { display: flex; gap: 18px; margin-top: 10px; }
+
+  .call-btn {
+    width: 54px; height: 54px; border-radius: 50%; border: none; cursor: pointer;
+    font-size: 20px; color: #fff; display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 2px 3px rgba(255,255,255,0.6), 0 4px 10px rgba(10,60,100,0.3);
+    transition: transform 0.15s ease;
+  }
+  .call-btn:hover { transform: scale(1.08); }
+  .call-btn.accept { background: linear-gradient(160deg, var(--lime), var(--lime-dark)); }
+  .call-btn.decline { background: linear-gradient(160deg, #ff8a8a, #d1453f); margin-top: 18px; }
+  .call-btn.control.mic { background: linear-gradient(160deg, #cdd8e4, #9aa9bb); margin-top: 0; }
+  .call-btn.control.mic.off { background: linear-gradient(160deg, #ff8a8a, #d1453f); }
+  .call-btn.control.cam { background: linear-gradient(160deg, #6fd6ff, #1a8fd1); margin-top: 0; }
+  .call-btn.control.cam.off { background: linear-gradient(160deg, #b8c4cc, #7c8894); }
+  .call-btn.control.minimize { background: linear-gradient(160deg, #e8d98a, #c9a63a); }
+
+  .minimized-call-pill {
+    position: fixed; bottom: 22px; right: 22px; z-index: 70;
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 8px;
+    background: var(--glass-strong);
+    backdrop-filter: blur(14px) saturate(150%); -webkit-backdrop-filter: blur(14px) saturate(150%);
+    border: 1px solid var(--glass-border); border-radius: 999px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    animation: riseIn 0.35s cubic-bezier(0.22,1,0.36,1) both;
+  }
+  .minimized-call-pill .avatar { width: 34px; height: 34px; flex-shrink: 0; }
+  .minimized-call-info { min-width: 0; }
+  .minimized-call-name { font-weight: 700; font-size: 12.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+  .minimized-call-time { font-size: 10.5px; color: var(--ink-soft); }
+  .minimized-call-btn {
+    width: 30px; height: 30px; border-radius: 50%; border: none; cursor: pointer;
+    background: linear-gradient(160deg, var(--lime), var(--lime-dark)); color: #fff; font-size: 13px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.2);
+    transition: transform 0.1s ease;
+  }
+  .minimized-call-btn:active { transform: scale(0.9); }
+  .minimized-call-btn.decline { background: linear-gradient(160deg, #ff8a8a, #d1453f); }
+  .call-btn.control img { width: 20px; height: 20px; object-fit: contain; }
+
+  .in-call-frame {
+    position: relative; width: min(900px, 92vw); height: min(600px, 82vh);
+    border-radius: 26px; overflow: hidden; background: #6fc3f0;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    transition: background 0.4s ease;
+  }
+  .call-bubble-layer { position: absolute; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; }
+  .call-bubble-layer .bubble {
+    position: absolute; bottom: -100px; border-radius: 50%;
+    background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.85), rgba(255,255,255,0.05) 60%, rgba(255,255,255,0.15) 100%);
+    box-shadow: inset 0 0 12px rgba(255,255,255,0.4);
+    animation: rise linear infinite; opacity: 0.6;
+  }
+  #remoteVideo { position: relative; z-index: 2; width: 100%; height: 100%; object-fit: cover; background: transparent; }
+  .remote-placeholder {
+    position: absolute; inset: 0; z-index: 2;
+    display: none; align-items: center; justify-content: center;
+  }
+  .avatar-big {
+    width: 150px; height: 150px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 56px;
+    box-shadow: inset 0 4px 8px rgba(255,255,255,0.55), 0 10px 26px rgba(10,60,100,0.25);
+    overflow: hidden;
+  }
+  .local-video-wrap {
+    position: absolute; z-index: 3; bottom: 90px; right: 20px; width: 130px; height: 96px;
+    border-radius: 14px; overflow: hidden; border: 2px solid rgba(255,255,255,0.7);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+  }
+  #localVideo { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .in-call-topinfo {
+    position: absolute; z-index: 3; top: 20px; left: 24px; color: #fff;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  }
+  .in-call-topinfo .call-name { color: #fff; font-size: 28px; }
+  .in-call-topinfo .call-status { color: rgba(255,255,255,0.9); font-size: 14px; margin-top: 2px; }
+  .in-call-controls {
+    position: absolute; z-index: 3; bottom: 20px; left: 0; right: 0;
+    display: flex; justify-content: center; gap: 16px;
+  }
+  .in-call-controls .call-btn.decline { margin-top: 0; }
+
+  .group-tile-grid {
+    position: absolute; inset: 0; z-index: 2;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 10px; padding: 76px 18px 96px; align-content: center;
+  }
+  .group-tile {
+    position: relative; border-radius: 16px; overflow: hidden;
+    background: rgba(10,60,100,0.25); aspect-ratio: 4/3;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .group-tile video { width: 100%; height: 100%; object-fit: cover; }
+  .group-tile .avatar-big { width: 64px; height: 64px; font-size: 24px; }
+  .group-tile-name {
+    position: absolute; bottom: 6px; left: 8px; z-index: 1; color: #fff; font-size: 11.5px; font-weight: 700;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.5); background: rgba(0,0,0,0.28); padding: 2px 9px; border-radius: 8px;
+  }
+  .group-tile-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+
+  .settings-card {
+    width: min(440px, 92vw); max-height: 86vh; overflow-y: auto;
+    padding: 28px 28px 30px;
+  }
+  .settings-header {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 21px;
+    color: var(--ink); margin-bottom: 22px;
+  }
+  .settings-close {
+    border: none; background: rgba(255,255,255,0.6); width: 32px; height: 32px; border-radius: 50%;
+    cursor: pointer; font-size: 14px; color: var(--ink); box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+    transition: transform 0.12s ease;
+  }
+  .settings-close:hover { transform: scale(1.08) rotate(90deg); }
+
+  .settings-group {
+    margin-bottom: 24px; padding: 16px 16px 4px;
+    background: rgba(255,255,255,0.22); border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 18px;
+  }
+  .settings-group:last-child { margin-bottom: 4px; }
+  .settings-group-title {
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 11.5px;
+    text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft);
+    margin-bottom: 14px; opacity: 0.85;
+  }
+  .settings-section { margin-bottom: 20px; }
+  .settings-label {
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 13.5px;
+    color: var(--ink); margin-bottom: 10px;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  }
+  .desktop-only-badge {
+    font-family: 'Nunito Sans', sans-serif; font-weight: 700; font-size: 9.5px;
+    text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft);
+    background: rgba(255,255,255,0.5); padding: 2px 7px; border-radius: 999px;
+  }
+  .avatar-row { display: flex; align-items: center; gap: 16px; }
+  .settings-slider { width: 100%; accent-color: var(--aqua-accent); height: 4px; }
+  .settings-row { display: flex; align-items: center; justify-content: space-between; }
+  .settings-select {
+    width: 100%; padding: 10px 12px; border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.8); background: var(--glass-strong);
+    font-family: 'Nunito Sans', sans-serif; font-size: 13.5px; color: var(--ink);
+    cursor: pointer; outline: none;
+  }
+
+  @keyframes settingsSlideUp {
+    0% { transform: translateY(70px); opacity: 0; }
+    55% { transform: translateY(-10px); opacity: 1; }
+    100% { transform: translateY(0); opacity: 1; }
+  }
+  #settingsOverlay.show .settings-card { animation: settingsSlideUp 0.45s cubic-bezier(0.22,1,0.36,1) both; }
+
+  .toggle-switch { position: relative; display: inline-block; width: 50px; height: 28px; flex-shrink: 0; }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute; cursor: pointer; inset: 0; background: rgba(255,255,255,0.7);
+    border-radius: 999px; transition: 0.2s; box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+  }
+  .toggle-slider::before {
+    content: ""; position: absolute; width: 22px; height: 22px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .toggle-switch input:checked + .toggle-slider { background: var(--status-dnd); }
+  .toggle-switch input:checked + .toggle-slider::before { transform: translateX(22px); }
+
+  .call-icon-btn.leave { background: linear-gradient(160deg, #ff9a8a, #d1453f); }
+
+  .request-cards:not(:empty) { margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .request-card {
+    display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 16px;
+    background: rgba(255,255,255,0.55); border: 1px solid rgba(255,255,255,0.8);
+  }
+  .request-card .req-info { flex: 1; min-width: 0; }
+  .request-card .req-name { font-weight: 700; font-size: 13.5px; }
+  .request-card .req-text { font-size: 11px; color: var(--ink-soft); }
+  .request-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .req-btn {
+    width: 30px; height: 30px; border-radius: 50%; border: none; cursor: pointer; color: #fff; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.2);
+    transition: transform 0.1s ease;
+  }
+  .req-btn:active { transform: scale(0.9); }
+  .req-btn.accept { background: linear-gradient(160deg, var(--lime), var(--lime-dark)); }
+  .req-btn.decline { background: linear-gradient(160deg, #ff8a8a, #d1453f); }
+
+  /* ---------- Retro Windows-style confirmation dialog ---------- */
+  .win-dialog {
+    width: 420px; max-width: 92vw;
+    background: #f4f7fb;
+    border: 1px solid #6b8caf;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 12px 34px rgba(0,0,0,0.4);
+    font-family: 'Segoe UI', Tahoma, Verdana, sans-serif;
+  }
+  .win-titlebar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 6px 7px 12px;
+    background: linear-gradient(180deg, #eef6ff 0%, #cfe6fb 45%, #a9d3f5 50%, #8ec3f0 100%);
+    border-bottom: 1px solid #6b8caf;
+    font-size: 13px; font-weight: 700; color: #16324f;
+  }
+  .win-titlebar .win-title-icon { font-size: 14px; }
+  .win-titlebar span { flex: 1; }
+  .win-close {
+    width: 24px; height: 22px; border: 1px solid #b23b3b; border-radius: 3px; cursor: pointer;
+    background: linear-gradient(180deg, #ff8f8f, #d33a3a);
+    color: #fff; font-size: 11px; font-weight: 700; line-height: 1;
+  }
+  .win-body { display: flex; gap: 16px; align-items: center; padding: 22px 22px 18px; }
+  .win-error-icon {
+    flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #ff6b6b, #c22626);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 900; font-size: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  }
+  .win-message { font-size: 13.5px; color: #1c1c1c; line-height: 1.5; }
+  .win-buttons { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 18px; }
+  .win-btn {
+    min-width: 78px; padding: 6px 14px; font-size: 13px;
+    font-family: 'Segoe UI', Tahoma, Verdana, sans-serif;
+    background: linear-gradient(180deg, #ffffff, #e4e9ef);
+    border: 1px solid #8fa4b8; border-radius: 3px; cursor: pointer; color: #16324f;
+  }
+  .win-btn:hover { background: linear-gradient(180deg, #ffffff, #d7e4f0); border-color: #5f89ad; }
+  .win-btn:active { background: #cddcec; }
+  .win-btn.primary { font-weight: 700; }
+
+  @keyframes riseIn {
+    from { opacity: 0; transform: translateY(26px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .rise-in { animation: riseIn 0.65s cubic-bezier(0.22,1,0.36,1) both; }
+  .rise-1 { animation-delay: 0s; }
+  .rise-2 { animation-delay: 0.1s; }
+  .rise-3 { animation-delay: 0.2s; }
+</style>
+</head>
+<body>
+
+<div class="seaweed-layer" id="seaweedLayer"></div>
+<div class="bubble-layer" id="bubbleLayer"></div>
+
+<div class="topbar rise-in rise-1">
+  <a class="pill-nav" href="home.html">⌂ Home</a>
+  <div class="topbar-right">
+    <div class="me-pill"><div class="avatar" id="mePillAvatar"></div><span id="meUsername">...</span></div>
+    <button class="pill-nav icon-only" id="settingsBtn" title="Settings">⚙️</button>
+    <button class="pill-nav" id="logoutBtn">Log out</button>
+  </div>
+</div>
+
+<div class="app">
+  <div class="friends-panel glass rise-in rise-2">
+    <div class="broadcast-panel" id="broadcastPanel" style="display:none;">
+      <div class="broadcast-label">📣 Broadcast as Bubbles</div>
+      <div class="add-row">
+        <input type="text" id="broadcastInput" placeholder="Message everyone...">
+        <button class="add-btn" id="broadcastBtn">Send</button>
+      </div>
+      <div class="add-error" id="broadcastStatus"></div>
+    </div>
+    <div class="add-row">
+      <input type="text" id="addFriendInput" placeholder="type username here">
+      <button class="add-btn" id="addFriendBtn">Add</button>
+    </div>
+    <div class="add-error" id="addError"></div>
+    <div class="add-row" id="newGroupRow" style="display:none;">
+      <input type="text" id="newGroupInput" placeholder="new group name">
+      <button class="add-btn" id="createGroupBtn">Create</button>
+    </div>
+    <button class="text-link-btn" id="newGroupToggle">+ New Group</button>
+    <div class="add-error" id="groupError"></div>
+    <div class="request-cards" id="requestCards"></div>
+    <div class="friend-list" id="friendList">
+      <div class="empty-note">Loading friends…</div>
+    </div>
+  </div>
+
+  <div class="chat-panel glass rise-in rise-3">
+    <div id="noChat" class="no-chat">Add a friend by username, then pick them from the list to start chatting!</div>
+    <div id="chatArea" style="display:none; flex:1; flex-direction:column; min-height:0;">
+      <div class="chat-header">
+        <div class="avatar" id="chatAvatar"></div>
+        <span id="chatFriendName"></span>
+        <span class="member-count" id="chatMemberCount" style="display:none;"></span>
+        <div class="header-actions">
+          <button class="call-icon-btn voice" id="voiceCallBtn" title="Voice call"><img src="icon-call.png" alt="Call"></button>
+          <button class="call-icon-btn video" id="videoCallBtn" title="Video call"><img src="icon-video.png" alt="Video call"></button>
+          <button class="call-icon-btn invite" id="inviteLinkBtn" title="Copy invite link" style="display:none;"><img src="icon-link.png" alt="Copy invite link"></button>
+          <button class="call-icon-btn leave" id="leaveGroupBtn" title="Leave group" style="display:none;"><img src="icon-leave.png" alt="Leave group"></button>
+        </div>
+      </div>
+      <div class="messages" id="messages"></div>
+      <div class="composer">
+        <button class="attach-btn" id="attachBtn" title="Send an image or GIF">📎</button>
+        <input type="file" id="imageInput" accept="image/*" style="display:none">
+        <input type="text" id="msgInput" placeholder="Type a message or paste a GIF link">
+        <button class="send-btn" id="sendBtn">➤</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="call-overlay" id="settingsOverlay">
+  <div class="settings-card glass">
+    <div class="settings-header">
+      <span>⚙️ Settings</span>
+      <button class="settings-close" id="settingsCloseBtn">✕</button>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-title">Profile</div>
+
+      <div class="settings-section">
+        <div class="settings-label">🪪 My Profile</div>
+        <button class="add-btn" id="viewProfileBtn">View &amp; Edit My Profile</button>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-label">🖼️ Profile Picture</div>
+        <div class="avatar-row">
+          <div class="avatar no-status" id="settingsAvatarPreview" style="width:64px;height:64px;font-size:24px;"></div>
+          <div>
+            <input type="file" id="avatarInput" accept="image/*" style="display:none">
+            <button class="add-btn" id="avatarChooseBtn">Choose New Picture</button>
+            <div class="add-error" id="avatarStatus"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-label">🎨 Theme</div>
+        <button class="add-btn" id="themesLinkBtn">Change Theme</button>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-row">
+          <div class="settings-label" style="margin-bottom:0;">🌙 Do Not Disturb</div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="dndToggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-title">Sound</div>
+
+      <div class="settings-section">
+        <div class="settings-label">🔊 Call Volume</div>
+        <input type="range" min="0" max="100" value="100" class="settings-slider" id="callVolumeSlider">
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-label">🎙️ Mic Volume</div>
+        <input type="range" min="0" max="200" value="100" class="settings-slider" id="micGainSlider">
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-label">🔔 Sound Volume</div>
+        <input type="range" min="0" max="100" value="100" class="settings-slider" id="soundVolumeSlider">
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-row">
+          <div class="settings-label" style="margin-bottom:0;">🫧 Bubble Pop Sounds</div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="bubblePopToggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-section" id="desktopMicSection" style="display:none;">
+        <div class="settings-label">🎤 Microphone <span class="desktop-only-badge">Desktop Only</span></div>
+        <select class="settings-select" id="micDeviceSelect"><option value="">Windows Default</option></select>
+      </div>
+
+      <div class="settings-section" id="desktopSpeakerSection" style="display:none;">
+        <div class="settings-label">🔈 Speaker <span class="desktop-only-badge">Desktop Only</span></div>
+        <select class="settings-select" id="speakerDeviceSelect"><option value="">Windows Default</option></select>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-title">Account</div>
+
+      <div class="settings-section">
+        <div class="settings-label">🔒 Change Password</div>
+        <input class="field" type="password" id="currentPasswordInput" placeholder="Current password">
+        <input class="field" type="password" id="newPasswordInput" placeholder="New password (6+ characters)">
+        <button class="add-btn" id="changePasswordBtn" style="margin-top:8px;">Update Password</button>
+        <div class="add-error" id="passwordStatus"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="call-overlay" id="leaveGroupOverlay">
+  <div class="win-dialog">
+    <div class="win-titlebar">
+      <span class="win-title-icon">🗔</span>
+      <span>Leave Group</span>
+      <button class="win-close" id="leaveGroupCloseX">✕</button>
+    </div>
+    <div class="win-body">
+      <div class="win-error-icon">✕</div>
+      <div class="win-message">Are you sure you want to leave this group?</div>
+    </div>
+    <div class="win-buttons">
+      <button class="win-btn primary" id="leaveGroupYesBtn">Yes</button>
+      <button class="win-btn" id="leaveGroupNoBtn">No</button>
+    </div>
+  </div>
+</div>
+
+<div class="call-overlay" id="groupInviteOverlay">
+  <div class="call-card glass">
+    <div class="call-avatar" id="groupInviteAvatar" style="background:linear-gradient(160deg,#c9a8ff,#7a5af0);">👥</div>
+    <div class="call-name" id="groupInviteName">Loading invite…</div>
+    <div class="call-status" id="groupInviteStatus"></div>
+    <div class="call-actions">
+      <button class="call-btn accept" id="groupInviteJoinBtn">✓</button>
+      <button class="call-btn decline" id="groupInviteCancelBtn">✕</button>
+    </div>
+  </div>
+</div>
+
+<div class="call-overlay" id="outgoingOverlay">
+  <div class="call-card glass">
+    <div class="call-avatar" id="outgoingAvatar"></div>
+    <div class="call-name" id="outgoingName"></div>
+    <div class="call-status">Calling…</div>
+    <button class="call-btn decline" id="cancelCallBtn">✕</button>
+  </div>
+</div>
+
+<div class="call-overlay" id="incomingOverlay">
+  <div class="call-card glass">
+    <div class="call-avatar" id="incomingAvatar"></div>
+    <div class="call-name" id="incomingName"></div>
+    <div class="call-status" id="incomingKind">Incoming call…</div>
+    <div class="call-actions">
+      <button class="call-btn accept" id="acceptCallBtn">✓</button>
+      <button class="call-btn decline" id="declineCallBtn">✕</button>
+    </div>
+  </div>
+</div>
+
+<div class="call-overlay" id="inCallOverlay">
+  <div class="in-call-frame" id="inCallFrame">
+    <div class="call-bubble-layer" id="callBubbleLayer"></div>
+    <video id="remoteVideo" autoplay playsinline></video>
+    <div class="remote-placeholder" id="remotePlaceholder">
+      <div class="avatar-big" id="remotePlaceholderAvatar"></div>
+    </div>
+    <div class="local-video-wrap"><video id="localVideo" autoplay playsinline muted></video></div>
+    <div class="in-call-topinfo">
+      <div class="call-name" id="inCallName"></div>
+      <div class="call-status" id="inCallTimer">Call Time: 0:00</div>
+    </div>
+    <div class="in-call-controls">
+      <button class="call-btn control mic" id="muteBtn" title="Mute"><img id="muteIcon" src="icon-mic.png" alt="Mute"></button>
+      <button class="call-btn control cam" id="toggleVideoBtn" title="Camera"><img src="icon-video.png" alt="Camera"></button>
+      <button class="call-btn control minimize" id="minimizeCallBtn" title="Minimize">🗕</button>
+      <button class="call-btn decline" id="hangupBtn" title="Hang up">✕</button>
+    </div>
+  </div>
+</div>
+<audio id="remoteAudioOnly" autoplay></audio>
+<audio id="ringtoneAudio" src="ringtone.mp3" loop></audio>
+
+<!-- Floating pill shown while a call is minimized -->
+<div class="minimized-call-pill" id="minimizedCallPill" style="display:none;">
+  <div class="avatar no-status" id="minimizedCallAvatar"></div>
+  <div class="minimized-call-info">
+    <div class="minimized-call-name" id="minimizedCallName"></div>
+    <div class="minimized-call-time" id="minimizedCallTime">00:00</div>
+  </div>
+  <button class="minimized-call-btn" id="restoreCallBtn" title="Return to call">⬆</button>
+  <button class="minimized-call-btn decline" id="minimizedHangupBtn" title="Hang up">✕</button>
+</div>
+
+<!-- Incoming group call overlay -->
+<div class="call-overlay" id="groupIncomingOverlay">
+  <div class="call-card glass">
+    <div class="call-avatar" style="background: linear-gradient(160deg, var(--sky-mid), var(--sky-deep)); font-size: 30px;">👥</div>
+    <div class="call-name" id="groupIncomingName"></div>
+    <div class="call-status" id="groupIncomingKind">Incoming group call…</div>
+    <div class="call-actions">
+      <button class="call-btn accept" id="groupAcceptCallBtn">✓</button>
+      <button class="call-btn decline" id="groupDeclineCallBtn">✕</button>
+    </div>
+  </div>
+</div>
+
+<!-- Group in-call overlay -->
+<div class="call-overlay" id="groupCallOverlay">
+  <div class="in-call-frame" id="groupCallFrame">
+    <div class="group-tile-grid" id="groupTileGrid"></div>
+    <div class="in-call-topinfo">
+      <div class="call-name" id="groupCallName"></div>
+      <div class="call-status" id="groupCallTimer">Call Time: 0:00</div>
+    </div>
+    <div class="in-call-controls">
+      <button class="call-btn control mic" id="groupMuteBtn" title="Mute"><img id="groupMuteIcon" src="icon-mic.png" alt="Mute"></button>
+      <button class="call-btn control cam" id="groupToggleVideoBtn" title="Camera"><img src="icon-video.png" alt="Camera"></button>
+      <button class="call-btn control minimize" id="groupMinimizeBtn" title="Minimize">🗕</button>
+      <button class="call-btn decline" id="groupHangupBtn" title="Leave call">✕</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let me = null;
+  let meProfile = null;
+  let activeFriend = null;
+  let friendsCache = [];
+  let incomingRequests = [];
+  let lastMessageAt = {}; // friendId -> ISO timestamp of most recent message with them
+  let groupsCache = [];   // [{id, name, created_by, memberIds}]
+  let activeGroup = null;
+  let lastGroupMessageAt = {}; // groupId -> ISO timestamp
+  let groupMsgChannel = null;  // realtime channel for the currently open group
+  let activeGroupMembers = {}; // userId -> profile, for whoever is open right now
+
+  const colorFromId = id => {
+    const palette = ['#7fe3d0','#ffd8a8','#c9a8ff','#ffe08a','#a8e063','#6fd6ff','#ff9fb0'];
+    let hash = 0;
+    for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) % palette.length;
+    return palette[Math.abs(hash) % palette.length];
+  };
+
+  function avatarStyle(id) {
+    const c = colorFromId(id || 'x');
+    return `background: linear-gradient(160deg, ${c}, ${c}dd);`;
+  }
+  function avatarInner(profile) {
+    if (profile && profile.avatar_url) {
+      return `<img class="avatar-img" src="${profile.avatar_url}" alt="">`;
+    }
+    const name = (profile && (profile.display_name || profile.username)) || '?';
+    return name[0].toUpperCase();
+  }
+  function avatarStyleFor(profile) {
+    if (profile && profile.avatar_url) return '';
+    return avatarStyle(profile ? profile.id : 'x');
+  }
+  function findProfileById(id) {
+    if (meProfile && meProfile.id === id) return meProfile;
+    return friendsCache.find(f => f.id === id) || null;
+  }
+
+  function viewProfile(username) {
+    if (!username) return;
+    window.location.href = 'profile.html?u=' + encodeURIComponent(username);
+  }
+
+  // ---------- Desktop notifications ----------
+  // Standard browser Notification API - works the same in the Electron
+  // app and in a regular browser tab. Only fires when the window doesn't
+  // currently have focus (minimized, backgrounded, or another window/tab active).
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+
+  function notifyDesktop(title, body, iconUrl, onClick) {
+    if (dndEnabled) return;
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+    if (document.hasFocus()) return;
+    const n = new Notification(title, { body, icon: iconUrl || 'notification-icon.png' });
+    n.onclick = () => {
+      window.focus();
+      if (onClick) onClick();
+      n.close();
+    };
+  }
+
+  // ---------- Presence (online / idle / do not disturb / offline) ----------
+  let presenceChannel = null;
+  let presenceMap = {};   // userId -> 'online' | 'idle' | 'dnd'
+  let lastPresenceSnapshot = '';
+  let dndEnabled = false;
+  let currentStatus = 'online';
+
+  function computeStatus() {
+    if (dndEnabled) return 'dnd';
+    if (document.hidden) return 'idle';
+    return 'online';
+  }
+  function statusToColor(status) {
+    if (status === 'online') return 'var(--status-online)';
+    if (status === 'idle') return 'var(--status-idle)';
+    if (status === 'dnd') return 'var(--status-dnd)';
+    return 'var(--status-offline)';
+  }
+  function statusColorFor(userId) {
+    if (me && userId === me.id) return statusToColor(currentStatus);
+    return statusToColor(presenceMap[userId]); // undefined -> offline
+  }
+  function isOffline(userId) {
+    if (me && userId === me.id) return false;
+    return !presenceMap[userId];
+  }
+  function avatarFullStyle(profile) {
+    const id = profile ? profile.id : null;
+    const display = isOffline(id) ? 'none' : 'block';
+    return `${avatarStyleFor(profile)} --status-color:${statusColorFor(id)}; --status-display:${display};`;
+  }
+  function groupOnlineCount(group) {
+    return group.memberIds.filter(uid => !isOffline(uid)).length;
+  }
+  function isGroupOffline(group) {
+    return groupOnlineCount(group) < 2;
+  }
+
+  async function updatePresence() {
+    currentStatus = computeStatus();
+    if (presenceChannel) await presenceChannel.track({ status: currentStatus });
+    renderMePillAvatar();
+  }
+
+  function subscribePresence() {
+    presenceChannel = supabaseClient.channel('presence-status', {
+      config: { presence: { key: me.id } }
+    });
+    presenceChannel.on('presence', { event: 'sync' }, () => {
+      const state = presenceChannel.presenceState();
+      const newMap = {};
+      Object.keys(state).forEach(userId => {
+        const entries = state[userId];
+        if (entries && entries.length > 0) newMap[userId] = entries[entries.length - 1].status;
+      });
+      const snapshot = JSON.stringify(newMap);
+      if (snapshot === lastPresenceSnapshot) return; // nothing actually changed - skip the rebuild
+      lastPresenceSnapshot = snapshot;
+      presenceMap = newMap;
+      renderFriendList();
+      renderMePillAvatar();
+      if (activeFriend) refreshChatHeaderAvatar();
+    });
+    presenceChannel.subscribe(async subStatus => {
+      if (subStatus === 'SUBSCRIBED') {
+        currentStatus = computeStatus();
+        await presenceChannel.track({ status: currentStatus });
+      }
+    });
+  }
+
+  document.addEventListener('visibilitychange', updatePresence);
+
+  async function init() {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session) { window.location.href = 'index.html'; return; }
+    playSound('startup.mp3', 0.6);
+    initPageTheme();
+
+    const { data: profile } = await supabaseClient
+      .from('profiles')
+      .select('*')
+      .eq('id', session.user.id)
+      .single();
+
+    me = { id: session.user.id, username: profile ? profile.username : 'You' };
+    meProfile = profile || { id: session.user.id, username: 'You' };
+    document.getElementById('meUsername').textContent = me.username;
+    renderMePillAvatar();
+
+    currentCallVolume = (meProfile.call_volume ?? 1);
+    currentMicGain = (meProfile.mic_gain ?? 1);
+    dndEnabled = !!meProfile.dnd_enabled;
+    setSoundVolume(meProfile.sound_volume ?? 1);
+    setBubblePopEnabled(meProfile.bubble_pop_enabled ?? true);
+    selectedMicId = meProfile.mic_device_id || null;
+    selectedSpeakerId = meProfile.speaker_device_id || null;
+    document.getElementById('callVolumeSlider').value = Math.round(currentCallVolume * 100);
+    document.getElementById('micGainSlider').value = Math.round(currentMicGain * 100);
+    document.getElementById('dndToggle').checked = dndEnabled;
+
+    if (isDesktopApp) {
+      document.getElementById('desktopMicSection').style.display = 'block';
+      document.getElementById('desktopSpeakerSection').style.display = 'block';
+    }
+
+    if (me.username === 'Bubbles') {
+      document.getElementById('broadcastPanel').style.display = 'block';
+    }
+
+    await loadFriends();
+    await loadGroups();
+    renderFriendList();
+    subscribeToMessages();
+    subscribePresence();
+    subscribeToFriendChanges();
+    checkInviteParam();
+
+    if (new URLSearchParams(window.location.search).get('settings') === '1') {
+      openSettings();
+      history.replaceState({}, '', 'dms.html');
+    }
+  }
+
+  function renderMePillAvatar() {
+    const el = document.getElementById('mePillAvatar');
+    el.setAttribute('style', avatarFullStyle(meProfile));
+    el.innerHTML = avatarInner(meProfile);
+  }
+
+  async function loadFriends() {
+    const { data: links, error } = await supabaseClient
+      .from('friends')
+      .select('*')
+      .or(`user_id.eq.${me.id},friend_id.eq.${me.id}`);
+
+    if (error || !links) {
+      friendsCache = [];
+      incomingRequests = [];
+      renderFriendList();
+      renderRequestCards();
+      return;
+    }
+
+    const acceptedLinks = links.filter(l => l.status === 'accepted');
+    const pendingIncoming = links.filter(l => l.status === 'pending' && l.friend_id === me.id);
+
+    const friendIds = acceptedLinks.map(l => l.user_id === me.id ? l.friend_id : l.user_id);
+    const { data: profiles } = friendIds.length
+      ? await supabaseClient.from('profiles').select('*').in('id', friendIds)
+      : { data: [] };
+    friendsCache = profiles || [];
+
+    const requesterIds = pendingIncoming.map(l => l.user_id);
+    const { data: requesterProfiles } = requesterIds.length
+      ? await supabaseClient.from('profiles').select('*').in('id', requesterIds)
+      : { data: [] };
+    incomingRequests = pendingIncoming
+      .map(l => ({ requestId: l.id, profile: (requesterProfiles || []).find(p => p.id === l.user_id) }))
+      .filter(r => r.profile);
+
+    const { data: recentMsgs } = await supabaseClient
+      .from('messages')
+      .select('sender_id, receiver_id, created_at')
+      .or(`sender_id.eq.${me.id},receiver_id.eq.${me.id}`)
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    lastMessageAt = {};
+    (recentMsgs || []).forEach(row => {
+      const other = row.sender_id === me.id ? row.receiver_id : row.sender_id;
+      if (!(other in lastMessageAt)) lastMessageAt[other] = row.created_at; // first hit = most recent
+    });
+
+    renderFriendList();
+    renderRequestCards();
+  }
+
+  function renderRequestCards() {
+    const container = document.getElementById('requestCards');
+    container.innerHTML = '';
+    incomingRequests.forEach(r => {
+      const p = r.profile;
+      const card = document.createElement('div');
+      card.className = 'request-card';
+      card.innerHTML = `
+        <div class="avatar no-status" style="${avatarStyleFor(p)}">${avatarInner(p)}</div>
+        <div class="req-info">
+          <div class="req-name">${p.display_name || p.username}</div>
+          <div class="req-text">sent you a friend request!</div>
+        </div>
+        <div class="request-actions">
+          <button class="req-btn accept" title="Accept">✓</button>
+          <button class="req-btn decline" title="Decline">✕</button>
+        </div>`;
+      card.querySelector('.accept').addEventListener('click', () => respondToRequest(r.requestId, true));
+      card.querySelector('.decline').addEventListener('click', () => respondToRequest(r.requestId, false));
+      container.appendChild(card);
+    });
+  }
+
+  async function respondToRequest(requestId, accept) {
+    if (accept) {
+      await supabaseClient.from('friends').update({ status: 'accepted' }).eq('id', requestId);
+    } else {
+      await supabaseClient.from('friends').delete().eq('id', requestId);
+    }
+    await loadFriends();
+  }
+
+  function subscribeToFriendChanges() {
+    supabaseClient
+      .channel('friends-channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'friends' }, payload => {
+        const row = payload.new || payload.old;
+        if (row && (row.user_id === me.id || row.friend_id === me.id)) loadFriends();
+      })
+      .subscribe();
+  }
+
+  async function loadGroups() {
+    const { data: myMemberships } = await supabaseClient
+      .from('group_members')
+      .select('group_id')
+      .eq('user_id', me.id);
+
+    const groupIds = (myMemberships || []).map(m => m.group_id);
+    if (groupIds.length === 0) { groupsCache = []; lastGroupMessageAt = {}; return; }
+
+    const { data: groups } = await supabaseClient.from('groups').select('*').in('id', groupIds);
+    const { data: allMembers } = await supabaseClient.from('group_members').select('group_id, user_id').in('group_id', groupIds);
+
+    groupsCache = (groups || []).map(g => ({
+      ...g,
+      memberIds: (allMembers || []).filter(m => m.group_id === g.id).map(m => m.user_id)
+    }));
+
+    const { data: recentGroupMsgs } = await supabaseClient
+      .from('group_messages')
+      .select('group_id, created_at')
+      .in('group_id', groupIds)
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    lastGroupMessageAt = {};
+    (recentGroupMsgs || []).forEach(row => {
+      if (!(row.group_id in lastGroupMessageAt)) lastGroupMessageAt[row.group_id] = row.created_at;
+    });
+  }
+
+  function renderFriendList() {
+    const listEl = document.getElementById('friendList');
+
+    const friendItems = friendsCache.map(f => ({
+      type: 'dm', id: f.id, obj: f,
+      online: !isOffline(f.id),
+      lastAt: lastMessageAt[f.id] || null
+    }));
+    const groupItems = groupsCache.map(g => ({
+      type: 'group', id: g.id, obj: g,
+      online: !isGroupOffline(g),
+      lastAt: lastGroupMessageAt[g.id] || null
+    }));
+    const items = [...friendItems, ...groupItems];
+
+    if (items.length === 0) {
+      listEl.innerHTML = '<div class="empty-note">No friends yet! Add someone by username above.</div>';
+      return;
+    }
+
+    items.sort((a, b) => {
+      if (a.online !== b.online) return (b.online ? 1 : 0) - (a.online ? 1 : 0);
+      const at = a.lastAt ? new Date(a.lastAt).getTime() : 0;
+      const bt = b.lastAt ? new Date(b.lastAt).getTime() : 0;
+      return bt - at;
+    });
+
+    listEl.innerHTML = '';
+    items.forEach(item => {
+      const row = document.createElement('div');
+      if (item.type === 'dm') {
+        const f = item.obj;
+        row.className = 'friend-row'
+          + (activeFriend && activeFriend.id === f.id ? ' active' : '')
+          + (item.online ? '' : ' offline');
+        row.innerHTML = `<div class="avatar" style="${avatarFullStyle(f)}">${avatarInner(f)}</div><div class="name">${f.display_name || f.username}${f.username === 'Bubbles' ? '<span class="bot-badge">📣</span>' : ''}</div>`;
+        row.addEventListener('click', () => openConversation(f));
+      } else {
+        const g = item.obj;
+        row.className = 'friend-row'
+          + (activeGroup && activeGroup.id === g.id ? ' active' : '')
+          + (item.online ? '' : ' offline');
+        row.innerHTML = `<div class="avatar no-status" style="${avatarStyle(g.id)}">${g.name[0].toUpperCase()}</div><div class="name">${g.name}<span class="group-badge">👥</span></div>`;
+        row.addEventListener('click', () => openGroupConversation(g));
+      }
+      listEl.appendChild(row);
+    });
+  }
+
+  async function addFriend() {
+    const input = document.getElementById('addFriendInput');
+    const errEl = document.getElementById('addError');
+    errEl.textContent = '';
+    const username = input.value.trim();
+    if (!username) return;
+
+    const { data: found } = await supabaseClient
+      .from('profiles')
+      .select('*')
+      .ilike('username', username)
+      .maybeSingle();
+
+    if (!found) { errEl.textContent = 'No user with that username.'; playSound('error.mp3', 0.6); return; }
+    if (found.id === me.id) { errEl.textContent = "That's you, silly!"; return; }
+
+    const { data: existing } = await supabaseClient
+      .from('friends')
+      .select('*')
+      .or(`and(user_id.eq.${me.id},friend_id.eq.${found.id}),and(user_id.eq.${found.id},friend_id.eq.${me.id})`)
+      .maybeSingle();
+
+    if (existing) {
+      if (existing.status === 'accepted') { errEl.textContent = 'Already friends.'; return; }
+      errEl.textContent = existing.user_id === me.id ? 'Request already sent.' : 'They already sent you a request - check above!';
+      return;
+    }
+
+    const { error } = await supabaseClient
+      .from('friends')
+      .insert({ user_id: me.id, friend_id: found.id, status: 'pending' });
+
+    if (error) { errEl.textContent = 'Could not send request.'; return; }
+    input.value = '';
+    playSound('sendfriend.mp3', 0.6);
+  }
+
+  async function openConversation(friend) {
+    const chatArea = document.getElementById('chatArea');
+    const alreadyOpen = chatArea.style.display === 'flex';
+
+    if (alreadyOpen) {
+      chatArea.classList.remove('chat-pop-in');
+      chatArea.classList.add('chat-fade-out');
+      await new Promise(resolve => setTimeout(resolve, 140));
+    }
+
+    activeFriend = friend;
+    activeGroup = null;
+    if (groupMsgChannel) { supabaseClient.removeChannel(groupMsgChannel); groupMsgChannel = null; }
+    renderFriendList();
+    document.getElementById('noChat').style.display = 'none';
+    chatArea.style.display = 'flex';
+    document.getElementById('chatFriendName').textContent = friend.display_name || friend.username;
+    document.getElementById('chatMemberCount').style.display = 'none';
+    document.getElementById('voiceCallBtn').style.display = 'flex';
+    document.getElementById('videoCallBtn').style.display = 'flex';
+    document.getElementById('inviteLinkBtn').style.display = 'none';
+    document.getElementById('leaveGroupBtn').style.display = 'none';
+    const chatAvatarEl = document.getElementById('chatAvatar');
+    chatAvatarEl.className = 'avatar';
+    chatAvatarEl.setAttribute('style', avatarFullStyle(friend) + 'cursor:pointer;');
+    chatAvatarEl.innerHTML = avatarInner(friend);
+    chatAvatarEl.onclick = () => viewProfile(friend.username);
+
+    const { data: msgs } = await supabaseClient
+      .from('messages')
+      .select('*')
+      .or(`and(sender_id.eq.${me.id},receiver_id.eq.${friend.id}),and(sender_id.eq.${friend.id},receiver_id.eq.${me.id})`)
+      .order('created_at', { ascending: true });
+
+    const container = document.getElementById('messages');
+    container.innerHTML = '';
+    (msgs || []).forEach(m => appendMessage(m, false));
+    container.scrollTop = container.scrollHeight;
+
+    chatArea.classList.remove('chat-fade-out');
+    chatArea.classList.add('chat-pop-in');
+    chatArea.addEventListener('animationend', () => chatArea.classList.remove('chat-pop-in'), { once: true });
+  }
+
+  function refreshChatHeaderAvatar() {
+    if (!activeFriend) return;
+    const chatAvatarEl = document.getElementById('chatAvatar');
+    chatAvatarEl.setAttribute('style', avatarFullStyle(activeFriend));
+  }
+
+  async function openGroupConversation(group) {
+    const chatArea = document.getElementById('chatArea');
+    const alreadyOpen = chatArea.style.display === 'flex';
+
+    if (alreadyOpen) {
+      chatArea.classList.remove('chat-pop-in');
+      chatArea.classList.add('chat-fade-out');
+      await new Promise(resolve => setTimeout(resolve, 140));
+    }
+
+    activeFriend = null;
+    activeGroup = group;
+    renderFriendList();
+    document.getElementById('noChat').style.display = 'none';
+    chatArea.style.display = 'flex';
+    document.getElementById('chatFriendName').textContent = group.name;
+    document.getElementById('chatMemberCount').textContent = `${group.memberIds.length}/5 members`;
+    document.getElementById('chatMemberCount').style.display = 'inline';
+    document.getElementById('voiceCallBtn').style.display = 'flex';
+    document.getElementById('videoCallBtn').style.display = 'flex';
+    document.getElementById('inviteLinkBtn').style.display = 'flex';
+    document.getElementById('leaveGroupBtn').style.display = 'flex';
+
+    const chatAvatarEl = document.getElementById('chatAvatar');
+    chatAvatarEl.className = 'avatar no-status';
+    chatAvatarEl.setAttribute('style', avatarStyle(group.id));
+    chatAvatarEl.innerHTML = group.name[0].toUpperCase();
+    chatAvatarEl.onclick = null;
+
+    const { data: memberProfiles } = await supabaseClient.from('profiles').select('*').in('id', group.memberIds);
+    activeGroupMembers = {};
+    (memberProfiles || []).forEach(p => { activeGroupMembers[p.id] = p; });
+
+    if (groupMsgChannel) { supabaseClient.removeChannel(groupMsgChannel); groupMsgChannel = null; }
+
+    const { data: msgs } = await supabaseClient
+      .from('group_messages')
+      .select('*')
+      .eq('group_id', group.id)
+      .order('created_at', { ascending: true });
+
+    const container = document.getElementById('messages');
+    container.innerHTML = '';
+    (msgs || []).forEach(m => appendMessage(m, false));
+    container.scrollTop = container.scrollHeight;
+
+    groupMsgChannel = supabaseClient
+      .channel('group-messages-' + group.id)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_messages', filter: `group_id=eq.${group.id}` }, payload => {
+        const m = payload.new;
+        lastGroupMessageAt[group.id] = m.created_at;
+        if (m.sender_id !== me.id) {
+          const senderProfile = activeGroupMembers[m.sender_id] || findProfileById(m.sender_id);
+          const senderName = senderProfile ? (senderProfile.display_name || senderProfile.username) : 'Someone';
+          const bodyText = isImageUrl(m.content) ? 'Sent an image' : m.content;
+          notifyDesktop(`${senderName} (${group.name})`, bodyText, senderProfile && senderProfile.avatar_url, () => {
+            openGroupConversation(group);
+          });
+        }
+        if (activeGroup && activeGroup.id === group.id) appendMessage(m, true);
+        renderFriendList();
+      })
+      .subscribe();
+
+    chatArea.classList.remove('chat-fade-out');
+    chatArea.classList.add('chat-pop-in');
+    chatArea.addEventListener('animationend', () => chatArea.classList.remove('chat-pop-in'), { once: true });
+  }
+
+  const IMAGE_URL_RE = /^https?:\/\/\S+\.(gif|png|jpe?g|webp|avif)(\?\S*)?$/i;
+  function isImageUrl(text) { return IMAGE_URL_RE.test(text.trim()); }
+
+  function appendMessage(m, animate) {
+    const container = document.getElementById('messages');
+    const mine = m.sender_id === me.id;
+    const row = document.createElement('div');
+    row.className = 'msg-row' + (mine ? ' mine' : '') + (animate ? (mine ? ' pop-mine' : ' pop-theirs') : '');
+    if (animate) playSound('chat.mp3', 0.5);
+    const senderProfile = mine ? meProfile : (activeGroup ? activeGroupMembers[m.sender_id] : activeFriend);
+    const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const invite = parseInviteLink(m.content);
+    let bodyHtml;
+    if (invite) {
+      bodyHtml = buildInviteCardHtml(invite.groupId);
+    } else if (isImageUrl(m.content)) {
+      bodyHtml = `<img class="msg-image" src="${m.content}" alt="shared image" onclick="window.open('${m.content}', '_blank')">`;
+    } else {
+      bodyHtml = `<div class="msg-bubble"></div>`;
+    }
+
+    const nameLabel = (activeGroup && !mine)
+      ? `<div class="msg-time" style="margin-bottom:2px;font-weight:700;">${(senderProfile && (senderProfile.display_name || senderProfile.username)) || 'Unknown'}</div>`
+      : '';
+
+    row.innerHTML = `
+      <div class="avatar no-status" style="cursor:pointer;${avatarStyleFor(senderProfile)}" onclick="viewProfile('${senderProfile ? senderProfile.username : ''}')">${avatarInner(senderProfile)}</div>
+      <div>
+        ${nameLabel}
+        ${bodyHtml}
+        <div class="msg-time">${time}</div>
+      </div>`;
+    if (!invite && !isImageUrl(m.content)) row.querySelector('.msg-bubble').textContent = m.content;
+    container.appendChild(row);
+    if (invite) wireInviteCard(row, invite.groupId);
+    if (animate) {
+      row.addEventListener('animationend', () => row.classList.remove(mine ? 'pop-mine' : 'pop-theirs'), { once: true });
+    }
+    container.scrollTop = container.scrollHeight;
+  }
+
+  // ---------- Group invite links ----------
+  function buildInviteLink(groupId) {
+    return window.location.origin + window.location.pathname + '?invite=' + groupId;
+  }
+  const INVITE_RE = /[?&]invite=([0-9a-fA-F-]{36})/;
+  function parseInviteLink(text) {
+    const trimmed = text.trim();
+    if (!/^https?:\/\//i.test(trimmed)) return null;
+    const match = trimmed.match(INVITE_RE);
+    return match ? { groupId: match[1] } : null;
+  }
+  function buildInviteCardHtml(groupId) {
+    return `
+      <div class="invite-card" data-group-id="${groupId}">
+        <button class="invite-dismiss" data-action="dismiss" title="Dismiss">✕</button>
+        <div class="invite-title" data-role="title">Loading invite…</div>
+        <button class="invite-join-btn" data-action="join" disabled>join?</button>
+      </div>`;
+  }
+  async function wireInviteCard(row, groupId) {
+    const card = row.querySelector('.invite-card');
+    const titleEl = card.querySelector('[data-role="title"]');
+    const joinBtn = card.querySelector('[data-action="join"]');
+    const dismissBtn = card.querySelector('[data-action="dismiss"]');
+    dismissBtn.addEventListener('click', () => row.remove());
+
+    const { data: group } = await supabaseClient.from('groups').select('*').eq('id', groupId).maybeSingle();
+    if (!group) { titleEl.textContent = 'This invite is no longer valid.'; return; }
+
+    const { data: members } = await supabaseClient.from('group_members').select('user_id').eq('group_id', groupId);
+    const memberIds = (members || []).map(x => x.user_id);
+    const alreadyMember = memberIds.includes(me.id);
+    const isFull = memberIds.length >= 5;
+
+    titleEl.textContent = alreadyMember
+      ? `You're already in ${group.name}`
+      : `You've been invited to join ${group.name}`;
+
+    if (alreadyMember) {
+      joinBtn.textContent = '✓ Joined';
+      joinBtn.disabled = true;
+    } else if (isFull) {
+      joinBtn.textContent = 'Group full';
+      joinBtn.disabled = true;
+    } else {
+      joinBtn.disabled = false;
+      joinBtn.addEventListener('click', async () => {
+        joinBtn.disabled = true;
+        joinBtn.textContent = 'Joining…';
+        const ok = await joinGroup(groupId);
+        joinBtn.textContent = ok ? '✓ Joined' : 'join?';
+        if (!ok) joinBtn.disabled = false;
+      });
+    }
+  }
+  async function joinGroup(groupId) {
+    const { error } = await supabaseClient.from('group_members').insert({ group_id: groupId, user_id: me.id });
+    if (error) {
+      alert(error.message.toLowerCase().includes('full') ? 'That group is full (max 5 members).' : 'Could not join: ' + error.message);
+      return false;
+    }
+    await loadGroups();
+    renderFriendList();
+    playSound('joingroup.mp3', 0.6);
+    const joined = groupsCache.find(g => g.id === groupId);
+    if (joined) openGroupConversation(joined);
+    return true;
+  }
+  function checkInviteParam() {
+    const params = new URLSearchParams(window.location.search);
+    const groupId = params.get('invite');
+    if (!groupId) return;
+    history.replaceState({}, '', window.location.pathname);
+    showGroupInviteOverlay(groupId);
+  }
+  async function showGroupInviteOverlay(groupId) {
+    document.getElementById('groupInviteName').textContent = 'Loading invite…';
+    document.getElementById('groupInviteStatus').textContent = '';
+    document.getElementById('groupInviteJoinBtn').style.display = 'flex';
+    showOverlay('groupInviteOverlay');
+
+    const { data: group } = await supabaseClient.from('groups').select('*').eq('id', groupId).maybeSingle();
+    if (!group) {
+      document.getElementById('groupInviteName').textContent = 'Invite not found';
+      document.getElementById('groupInviteStatus').textContent = 'This link may be invalid, or the group no longer exists.';
+      document.getElementById('groupInviteJoinBtn').style.display = 'none';
+      return;
+    }
+
+    const { data: members } = await supabaseClient.from('group_members').select('user_id').eq('group_id', groupId);
+    const memberIds = (members || []).map(x => x.user_id);
+    const alreadyMember = memberIds.includes(me.id);
+    const isFull = memberIds.length >= 5;
+
+    document.getElementById('groupInviteName').textContent = group.name;
+    document.getElementById('groupInviteStatus').textContent = alreadyMember
+      ? "You're already in this group"
+      : isFull ? 'This group is full (5/5 members)' : `${memberIds.length}/5 members`;
+
+    const joinBtn = document.getElementById('groupInviteJoinBtn');
+    joinBtn.disabled = alreadyMember || isFull;
+    joinBtn.onclick = async () => {
+      joinBtn.disabled = true;
+      const ok = await joinGroup(groupId);
+      hideAllOverlays();
+      if (!ok) alert('Could not join that group.');
+    };
+  }
+
+  async function sendMessage() {
+    const input = document.getElementById('msgInput');
+    const text = input.value.trim();
+    if (!text || (!activeFriend && !activeGroup)) return;
+    input.value = '';
+    if (activeGroup) {
+      await supabaseClient.from('group_messages').insert({ group_id: activeGroup.id, sender_id: me.id, content: text });
+    } else {
+      await supabaseClient.from('messages').insert({ sender_id: me.id, receiver_id: activeFriend.id, content: text });
+    }
+  }
+
+  function subscribeToMessages() {
+    supabaseClient
+      .channel('messages-channel')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+        const m = payload.new;
+        const isMine = m.sender_id === me.id;
+        const involvedWithMe = isMine || m.receiver_id === me.id;
+        if (involvedWithMe) {
+          const other = isMine ? m.receiver_id : m.sender_id;
+          lastMessageAt[other] = m.created_at;
+          renderFriendList();
+        }
+        const involvesActive = activeFriend &&
+          ((m.sender_id === activeFriend.id && m.receiver_id === me.id) ||
+           (m.sender_id === me.id && m.receiver_id === activeFriend.id));
+
+        if (!isMine && m.receiver_id === me.id) {
+          const senderProfile = findProfileById(m.sender_id);
+          const senderName = senderProfile ? (senderProfile.display_name || senderProfile.username) : 'Someone';
+          const bodyText = isImageUrl(m.content) ? 'Sent an image' : m.content;
+          notifyDesktop(senderName, bodyText, senderProfile && senderProfile.avatar_url, () => {
+            if (senderProfile) openConversation(senderProfile);
+          });
+        }
+
+        if (involvesActive) {
+          appendMessage(m, true);
+        } else if (!isMine && m.receiver_id === me.id && !dndEnabled) {
+          playSound('notification.mp3', 0.6);
+        }
+      })
+      .subscribe();
+  }
+
+  document.getElementById('addFriendBtn').addEventListener('click', addFriend);
+  document.getElementById('addFriendInput').addEventListener('keydown', e => { if (e.key === 'Enter') addFriend(); });
+  document.getElementById('sendBtn').addEventListener('click', sendMessage);
+  document.getElementById('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+
+  document.getElementById('attachBtn').addEventListener('click', () => {
+    if (!activeFriend && !activeGroup) return;
+    document.getElementById('imageInput').click();
+  });
+  document.getElementById('imageInput').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file || (!activeFriend && !activeGroup)) return;
+
+    const attachBtn = document.getElementById('attachBtn');
+    attachBtn.disabled = true;
+    attachBtn.textContent = '…';
+
+    try {
+      const ext = file.name.split('.').pop();
+      const path = `${me.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error: uploadError } = await supabaseClient.storage
+        .from('chat-uploads')
+        .upload(path, file);
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabaseClient.storage.from('chat-uploads').getPublicUrl(path);
+      if (activeGroup) {
+        await supabaseClient.from('group_messages').insert({ group_id: activeGroup.id, sender_id: me.id, content: urlData.publicUrl });
+      } else {
+        await supabaseClient.from('messages').insert({ sender_id: me.id, receiver_id: activeFriend.id, content: urlData.publicUrl });
+      }
+    } catch (err) {
+      alert('Could not send image: ' + err.message);
+    } finally {
+      attachBtn.disabled = false;
+      attachBtn.textContent = '📎';
+    }
+  });
+
+  document.getElementById('newGroupToggle').addEventListener('click', () => {
+    const row = document.getElementById('newGroupRow');
+    row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+  });
+  document.getElementById('createGroupBtn').addEventListener('click', async () => {
+    const input = document.getElementById('newGroupInput');
+    const errEl = document.getElementById('groupError');
+    errEl.textContent = '';
+    const name = input.value.trim();
+    if (!name) return;
+
+    const { data: group, error } = await supabaseClient
+      .from('groups')
+      .insert({ name, created_by: me.id })
+      .select()
+      .single();
+    if (error) { errEl.textContent = 'Could not create group.'; return; }
+
+    const { error: memberError } = await supabaseClient
+      .from('group_members')
+      .insert({ group_id: group.id, user_id: me.id });
+    if (memberError) { errEl.textContent = 'Group created, but could not join it.'; return; }
+
+    input.value = '';
+    document.getElementById('newGroupRow').style.display = 'none';
+    await loadGroups();
+    renderFriendList();
+    playSound('joingroup.mp3', 0.6);
+    const created = groupsCache.find(g => g.id === group.id);
+    if (created) openGroupConversation(created);
+  });
+  document.getElementById('newGroupInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('createGroupBtn').click();
+  });
+
+  document.getElementById('inviteLinkBtn').addEventListener('click', async () => {
+    if (!activeGroup) return;
+    const link = buildInviteLink(activeGroup.id);
+    const btn = document.getElementById('inviteLinkBtn');
+    const original = btn.innerHTML;
+    try {
+      await navigator.clipboard.writeText(link);
+      btn.innerHTML = '✓';
+    } catch (err) {
+      prompt('Copy this invite link:', link);
+    }
+    setTimeout(() => { btn.innerHTML = original; }, 1200);
+  });
+
+  document.getElementById('groupInviteCancelBtn').addEventListener('click', hideAllOverlays);
+
+  async function leaveGroup() {
+    if (!activeGroup) return;
+    const groupId = activeGroup.id;
+
+    const { error } = await supabaseClient.rpc('leave_group', { gid: groupId });
+    if (error) {
+      hideAllOverlays();
+      alert('Could not leave the group: ' + error.message);
+      return;
+    }
+
+    if (groupMsgChannel) { supabaseClient.removeChannel(groupMsgChannel); groupMsgChannel = null; }
+    activeGroup = null;
+    document.getElementById('chatArea').style.display = 'none';
+    document.getElementById('noChat').style.display = 'flex';
+    hideAllOverlays();
+
+    await loadGroups();
+    renderFriendList();
+  }
+
+  document.getElementById('leaveGroupBtn').addEventListener('click', () => {
+    if (activeGroup) {
+      showOverlay('leaveGroupOverlay');
+      playSound('error.mp3', 0.6);
+    }
+  });
+  document.getElementById('leaveGroupYesBtn').addEventListener('click', leaveGroup);
+  document.getElementById('leaveGroupNoBtn').addEventListener('click', hideAllOverlays);
+  document.getElementById('leaveGroupCloseX').addEventListener('click', hideAllOverlays);
+
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    if (groupMsgChannel) supabaseClient.removeChannel(groupMsgChannel);
+    if (presenceChannel) {
+      await presenceChannel.untrack();
+      supabaseClient.removeChannel(presenceChannel);
+    }
+    await supabaseClient.auth.signOut();
+    window.location.href = 'index.html';
+  });
+
+  document.getElementById('broadcastBtn').addEventListener('click', async () => {
+    const input = document.getElementById('broadcastInput');
+    const status = document.getElementById('broadcastStatus');
+    const text = input.value.trim();
+    if (!text) return;
+
+    status.textContent = 'Sending…';
+    const { data: everyone, error: fetchErr } = await supabaseClient
+      .from('profiles')
+      .select('id')
+      .neq('id', me.id);
+
+    if (fetchErr || !everyone || everyone.length === 0) {
+      status.textContent = 'No one to send to yet.';
+      return;
+    }
+
+    const rows = everyone.map(p => ({ sender_id: me.id, receiver_id: p.id, content: text }));
+    const { error } = await supabaseClient.from('messages').insert(rows);
+
+    if (error) {
+      status.textContent = 'Failed: ' + error.message;
+      return;
+    }
+    status.textContent = `Sent to ${rows.length} ${rows.length === 1 ? 'person' : 'people'}!`;
+    input.value = '';
+  });
+
+  function applySpeakerToElement(el) {
+    if (!el || !selectedSpeakerId || typeof el.setSinkId !== 'function') return;
+    el.setSinkId(selectedSpeakerId).catch(() => {});
+  }
+  function applySpeakerToAllActiveElements() {
+    applySpeakerToElement(document.getElementById('remoteVideo'));
+    applySpeakerToElement(document.getElementById('remoteAudioOnly'));
+    document.querySelectorAll('.group-tile video').forEach(applySpeakerToElement);
+  }
+
+  async function populateAudioDeviceLists() {
+    if (!isDesktopApp) return;
+    try {
+      // Device labels are blank until permission has been granted at least once -
+      // this quietly unlocks them if they haven't been already.
+      const temp = await navigator.mediaDevices.getUserMedia({ audio: true });
+      temp.getTracks().forEach(t => t.stop());
+    } catch (e) { /* fine - dropdown just falls back to generic labels */ }
+
+    let devices = [];
+    try { devices = await navigator.mediaDevices.enumerateDevices(); } catch (e) { return; }
+
+    const micSelect = document.getElementById('micDeviceSelect');
+    const speakerSelect = document.getElementById('speakerDeviceSelect');
+    micSelect.innerHTML = '<option value="">Windows Default</option>';
+    speakerSelect.innerHTML = '<option value="">Windows Default</option>';
+
+    devices.filter(d => d.kind === 'audioinput').forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || 'Microphone';
+      micSelect.appendChild(opt);
+    });
+    devices.filter(d => d.kind === 'audiooutput').forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || 'Speaker';
+      speakerSelect.appendChild(opt);
+    });
+
+    micSelect.value = selectedMicId || '';
+    speakerSelect.value = selectedSpeakerId || '';
+  }
+
+  function openSettings() {
+    document.getElementById('settingsAvatarPreview').setAttribute('style', avatarStyleFor(meProfile) + 'font-size:24px;');
+    document.getElementById('settingsAvatarPreview').innerHTML = avatarInner(meProfile);
+    document.getElementById('dndToggle').checked = dndEnabled;
+    document.getElementById('soundVolumeSlider').value = Math.round(getSoundVolume() * 100);
+    document.getElementById('bubblePopToggle').checked = isBubblePopEnabled();
+    document.getElementById('avatarStatus').textContent = '';
+    document.getElementById('passwordStatus').textContent = '';
+    document.getElementById('currentPasswordInput').value = '';
+    document.getElementById('newPasswordInput').value = '';
+    if (isDesktopApp) populateAudioDeviceLists();
+    showOverlay('settingsOverlay');
+  }
+  document.getElementById('settingsBtn').addEventListener('click', openSettings);
+  document.getElementById('themesLinkBtn').addEventListener('click', () => {
+    window.location.href = 'themes.html';
+  });
+  document.getElementById('viewProfileBtn').addEventListener('click', () => {
+    viewProfile(me.username);
+  });
+  document.getElementById('settingsCloseBtn').addEventListener('click', hideAllOverlays);
+
+  document.getElementById('dndToggle').addEventListener('change', async e => {
+    dndEnabled = e.target.checked;
+    await supabaseClient.from('profiles').update({ dnd_enabled: dndEnabled }).eq('id', me.id);
+    updatePresence();
+  });
+
+  document.getElementById('avatarChooseBtn').addEventListener('click', () => {
+    document.getElementById('avatarInput').click();
+  });
+  document.getElementById('avatarInput').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const status = document.getElementById('avatarStatus');
+    status.textContent = 'Uploading…';
+    try {
+      const ext = file.name.split('.').pop();
+      const path = `avatars/${me.id}-${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabaseClient.storage.from('chat-uploads').upload(path, file);
+      if (uploadError) throw uploadError;
+      const { data: urlData } = supabaseClient.storage.from('chat-uploads').getPublicUrl(path);
+
+      const { error: updateError } = await supabaseClient
+        .from('profiles')
+        .update({ avatar_url: urlData.publicUrl })
+        .eq('id', me.id);
+      if (updateError) throw updateError;
+
+      meProfile.avatar_url = urlData.publicUrl;
+      status.textContent = 'Updated!';
+      document.getElementById('settingsAvatarPreview').innerHTML = avatarInner(meProfile);
+      document.getElementById('settingsAvatarPreview').setAttribute('style', avatarStyleFor(meProfile) + 'font-size:24px;');
+      renderMePillAvatar();
+      renderFriendList();
+      if (activeFriend) openConversation(activeFriend);
+    } catch (err) {
+      status.textContent = 'Failed: ' + err.message;
+    }
+  });
+
+  document.getElementById('callVolumeSlider').addEventListener('input', e => {
+    currentCallVolume = e.target.value / 100;
+    document.getElementById('remoteVideo').volume = currentCallVolume;
+    document.getElementById('remoteAudioOnly').volume = currentCallVolume;
+  });
+  document.getElementById('callVolumeSlider').addEventListener('change', async () => {
+    await supabaseClient.from('profiles').update({ call_volume: currentCallVolume }).eq('id', me.id);
+  });
+
+  document.getElementById('micGainSlider').addEventListener('input', e => {
+    currentMicGain = e.target.value / 100;
+    if (micGainNode) micGainNode.gain.value = currentMicGain;
+  });
+  document.getElementById('micGainSlider').addEventListener('change', async () => {
+    await supabaseClient.from('profiles').update({ mic_gain: currentMicGain }).eq('id', me.id);
+  });
+
+  document.getElementById('soundVolumeSlider').addEventListener('input', e => {
+    setSoundVolume(e.target.value / 100);
+  });
+  document.getElementById('soundVolumeSlider').addEventListener('change', async () => {
+    await supabaseClient.from('profiles').update({ sound_volume: getSoundVolume() }).eq('id', me.id);
+  });
+
+  document.getElementById('bubblePopToggle').addEventListener('change', async e => {
+    setBubblePopEnabled(e.target.checked);
+    await supabaseClient.from('profiles').update({ bubble_pop_enabled: e.target.checked }).eq('id', me.id);
+  });
+
+  document.getElementById('micDeviceSelect').addEventListener('change', async e => {
+    selectedMicId = e.target.value || null;
+    await supabaseClient.from('profiles').update({ mic_device_id: selectedMicId }).eq('id', me.id);
+  });
+  document.getElementById('speakerDeviceSelect').addEventListener('change', async e => {
+    selectedSpeakerId = e.target.value || null;
+    await supabaseClient.from('profiles').update({ speaker_device_id: selectedSpeakerId }).eq('id', me.id);
+    applySpeakerToAllActiveElements();
+  });
+
+  document.getElementById('changePasswordBtn').addEventListener('click', async () => {
+    const status = document.getElementById('passwordStatus');
+    const current = document.getElementById('currentPasswordInput').value;
+    const next = document.getElementById('newPasswordInput').value;
+    status.textContent = '';
+
+    if (!current || !next) { status.textContent = 'Fill in both fields.'; return; }
+    if (next.length < 6) { status.textContent = 'New password needs 6+ characters.'; return; }
+
+    status.textContent = 'Checking current password…';
+    const { error: checkError } = await supabaseClient.auth.signInWithPassword({
+      email: usernameToEmail(me.username),
+      password: current
+    });
+    if (checkError) { status.textContent = 'Current password is incorrect.'; return; }
+
+    const { error: updateError } = await supabaseClient.auth.updateUser({ password: next });
+    if (updateError) { status.textContent = 'Failed: ' + updateError.message; return; }
+
+    status.textContent = 'Password updated!';
+    document.getElementById('currentPasswordInput').value = '';
+    document.getElementById('newPasswordInput').value = '';
+  });
+
+  const RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+  const isDesktopApp = navigator.userAgent.toLowerCase().includes('electron');
+  let selectedMicId = null;      // null = system default
+  let selectedSpeakerId = null;  // null = system default
+
+  let pc = null;
+  let localStream = null;
+  let myChannel = null;
+  let callPeer = null;
+  let callState = 'idle';
+  let isVideoCall = false;
+  let pendingCandidates = [];
+  let callTimerInterval = null;
+  let callSeconds = 0;
+  let localVideoOn = false;
+  let remoteVideoOn = false;
+  let currentCallVolume = 1;
+  let currentMicGain = 1;
+  let audioCtx = null;
+  let micGainNode = null;
+  let rawMicStream = null;
+  let callRingTimeoutId = null;
+  const CALL_RING_TIMEOUT_MS = 38400; // 38.4 seconds
+
+  // ---------- Group calling state ----------
+  let groupCallPeers = {};          // userId -> RTCPeerConnection
+  let groupCallLocalStream = null;
+  let groupRawMicStream = null;
+  let groupAudioCtx = null;
+  let groupMicGainNode = null;
+  let groupCallRoomChannel = null;
+  let inGroupCall = false;
+  let groupCallInfo = null;         // { group, video }
+  let groupCallTimerInterval = null;
+  let groupCallSeconds = 0;
+  let groupPendingCandidates = {};  // userId -> [candidates]
+  let groupParticipantVideo = {};   // userId -> bool
+  let groupCallRingTimeoutId = null;
+  let groupLocalVideoOn = false;
+  let groupCallMemberProfiles = {};
+  let pendingGroupCallInfo = null;  // { groupId, groupName, video } while an incoming group call is ringing
+
+  function anyCallActive() { return callState !== 'idle' || inGroupCall; }
+
+  function personalChannelName(userId) { return 'call:' + userId; }
+
+  function sendSignal(toUserId, payload) {
+    supabaseClient.channel(personalChannelName(toUserId), { config: { broadcast: { self: false } } })
+      .send({ type: 'broadcast', event: 'signal', payload: { ...payload, from: me.id, fromName: me.username } });
+  }
+
+  function showOverlay(id) {
+    ['outgoingOverlay', 'incomingOverlay', 'inCallOverlay', 'settingsOverlay', 'groupInviteOverlay', 'leaveGroupOverlay', 'groupIncomingOverlay', 'groupCallOverlay'].forEach(o => {
+      document.getElementById(o).classList.toggle('show', o === id);
+    });
+  }
+  function hideAllOverlays() {
+    ['outgoingOverlay', 'incomingOverlay', 'inCallOverlay', 'settingsOverlay', 'groupInviteOverlay', 'leaveGroupOverlay', 'groupIncomingOverlay', 'groupCallOverlay'].forEach(o => document.getElementById(o).classList.remove('show'));
+  }
+
+  async function getMedia(video) {
+    rawMicStream = await navigator.mediaDevices.getUserMedia({
+      audio: selectedMicId ? { deviceId: { exact: selectedMicId } } : true,
+      video: video ? { width: 320, height: 240 } : false
+    });
+
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(new MediaStream(rawMicStream.getAudioTracks()));
+    micGainNode = audioCtx.createGain();
+    micGainNode.gain.value = currentMicGain;
+    const dest = audioCtx.createMediaStreamDestination();
+    source.connect(micGainNode).connect(dest);
+
+    const tracks = [...dest.stream.getAudioTracks()];
+    if (video) tracks.push(...rawMicStream.getVideoTracks());
+    return new MediaStream(tracks);
+  }
+
+  function createPeerConnection(targetId) {
+    const conn = new RTCPeerConnection(RTC_CONFIG);
+    conn.onicecandidate = e => {
+      if (e.candidate) sendSignal(targetId, { type: 'candidate', candidate: e.candidate });
+    };
+    conn.ontrack = e => {
+      const remoteVideo = document.getElementById('remoteVideo');
+      const remoteAudio = document.getElementById('remoteAudioOnly');
+      if (isVideoCall) {
+        remoteVideo.srcObject = e.streams[0];
+        applySpeakerToElement(remoteVideo);
+      } else {
+        remoteAudio.srcObject = e.streams[0];
+        applySpeakerToElement(remoteAudio);
+      }
+    };
+    conn.onconnectionstatechange = () => {
+      if (['disconnected', 'failed', 'closed'].includes(conn.connectionState) && callState === 'active') {
+        endCall(false);
+      }
+    };
+    return conn;
+  }
+
+  function startCallTimer() {
+    callSeconds = 0;
+    const el = document.getElementById('inCallTimer');
+    el.textContent = 'Call Time: 0:00';
+    callTimerInterval = setInterval(() => {
+      callSeconds++;
+      const m = String(Math.floor(callSeconds / 60)).padStart(2, '0');
+      const s = String(callSeconds % 60).padStart(2, '0');
+      el.textContent = `Call Time: ${m}:${s}`;
+      document.getElementById('minimizedCallTime').textContent = `${m}:${s}`;
+    }, 1000);
+  }
+
+  function spawnCallBubbles() {
+    const bLayer = document.getElementById('callBubbleLayer');
+    bLayer.innerHTML = '';
+    for (let i = 0; i < 10; i++) {
+      const b = document.createElement('div');
+      b.className = 'bubble';
+      const size = 16 + Math.random() * 50;
+      b.style.width = size + 'px';
+      b.style.height = size + 'px';
+      b.style.left = Math.random() * 100 + '%';
+      b.style.animationDuration = (10 + Math.random() * 14) + 's';
+      b.style.animationDelay = (Math.random() * -14) + 's';
+      bLayer.appendChild(b);
+      wireBubblePopSound(b);
+    }
+  }
+
+  function updateCallVisuals() {
+    const localWrap = document.querySelector('.local-video-wrap');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const placeholder = document.getElementById('remotePlaceholder');
+    const placeholderAvatar = document.getElementById('remotePlaceholderAvatar');
+    const toggleVideoBtn = document.getElementById('toggleVideoBtn');
+
+    localWrap.style.display = (isVideoCall && localVideoOn) ? 'block' : 'none';
+    toggleVideoBtn.style.display = isVideoCall ? 'flex' : 'none';
+    toggleVideoBtn.classList.toggle('off', !localVideoOn);
+
+    if (isVideoCall && remoteVideoOn) {
+      remoteVideo.style.display = 'block';
+      placeholder.style.display = 'none';
+    } else {
+      remoteVideo.style.display = 'none';
+      placeholder.style.display = 'flex';
+      if (callPeer) {
+        placeholderAvatar.setAttribute('style', avatarStyleFor(callPeer));
+        placeholderAvatar.innerHTML = avatarInner(callPeer);
+      }
+    }
+
+    if (callPeer) {
+      const baseColor = colorFromId(callPeer.id);
+      document.getElementById('inCallFrame').style.background =
+        `color-mix(in srgb, ${baseColor} 32%, white)`;
+    }
+  }
+
+  function playRingtone() {
+    const el = document.getElementById('ringtoneAudio');
+    el.volume = Math.max(0, Math.min(1, 0.7 * getSoundVolume()));
+    el.currentTime = 0;
+    el.play().catch(() => {});
+  }
+  function stopRingtone() {
+    const el = document.getElementById('ringtoneAudio');
+    el.pause();
+    el.currentTime = 0;
+  }
+
+  async function startCall(friend, video) {
+    if (anyCallActive()) return;
+    callPeer = friend;
+    isVideoCall = video;
+    callState = 'outgoing';
+
+    document.getElementById('outgoingAvatar').setAttribute('style', avatarStyleFor(friend));
+    document.getElementById('outgoingAvatar').innerHTML = avatarInner(friend);
+    document.getElementById('outgoingName').textContent = friend.display_name || friend.username;
+    showOverlay('outgoingOverlay');
+
+    try {
+      localStream = await getMedia(video);
+    } catch (err) {
+      alert('Could not access microphone/camera: ' + err.message);
+      resetCallState();
+      return;
+    }
+
+    sendSignal(friend.id, { type: 'call-request', video });
+    callRingTimeoutId = setTimeout(() => { if (callState === 'outgoing') endCall(true); }, CALL_RING_TIMEOUT_MS);
+  }
+
+  async function acceptCall() {
+    callState = 'active';
+    stopRingtone();
+    hideAllOverlays();
+
+    try {
+      localStream = await getMedia(isVideoCall);
+    } catch (err) {
+      alert('Could not access microphone/camera: ' + err.message);
+      sendSignal(callPeer.id, { type: 'hangup' });
+      resetCallState();
+      return;
+    }
+
+    pc = createPeerConnection(callPeer.id);
+    localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+    setupInCallUI();
+
+    sendSignal(callPeer.id, { type: 'call-accept', video: isVideoCall });
+  }
+
+  function declineCall() {
+    if (callPeer) sendSignal(callPeer.id, { type: 'call-decline' });
+    resetCallState();
+  }
+
+  function setupInCallUI() {
+    document.getElementById('inCallName').textContent = callPeer.display_name || callPeer.username;
+    localVideoOn = isVideoCall;
+    remoteVideoOn = isVideoCall;
+    const localVideo = document.getElementById('localVideo');
+    if (isVideoCall) localVideo.srcObject = localStream;
+    document.getElementById('remoteVideo').volume = currentCallVolume;
+    document.getElementById('remoteAudioOnly').volume = currentCallVolume;
+    spawnCallBubbles();
+    updateCallVisuals();
+    showOverlay('inCallOverlay');
+    startCallTimer();
+  }
+
+  function resetCallState() {
+    hideAllOverlays();
+    hideMinimizedPill();
+    stopRingtone();
+    if (callRingTimeoutId) { clearTimeout(callRingTimeoutId); callRingTimeoutId = null; }
+    if (callTimerInterval) clearInterval(callTimerInterval);
+    callTimerInterval = null;
+    if (pc) { pc.close(); pc = null; }
+    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+    if (rawMicStream) { rawMicStream.getTracks().forEach(t => t.stop()); rawMicStream = null; }
+    if (audioCtx) { audioCtx.close(); audioCtx = null; micGainNode = null; }
+    document.getElementById('remoteVideo').srcObject = null;
+    document.getElementById('localVideo').srcObject = null;
+    document.getElementById('remoteAudioOnly').srcObject = null;
+    pendingCandidates = [];
+    callPeer = null;
+    callState = 'idle';
+    isVideoCall = false;
+    localVideoOn = false;
+    remoteVideoOn = false;
+  }
+
+  function endCall(notifyPeer) {
+    if (notifyPeer && callPeer) sendSignal(callPeer.id, { type: 'hangup' });
+    resetCallState();
+  }
+
+  async function handleSignal(payload) {
+    const { type, from, fromName } = payload;
+
+    if (type === 'call-request') {
+      if (callState !== 'idle' || inGroupCall) {
+        sendSignal(from, { type: 'call-decline' });
+        return;
+      }
+      const knownProfile = findProfileById(from);
+      callPeer = knownProfile || { id: from, username: fromName, display_name: fromName };
+      isVideoCall = payload.video;
+      callState = 'incoming';
+      document.getElementById('incomingAvatar').setAttribute('style', avatarStyleFor(callPeer));
+      document.getElementById('incomingAvatar').innerHTML = avatarInner(callPeer);
+      document.getElementById('incomingName').textContent = fromName;
+      document.getElementById('incomingKind').textContent = (isVideoCall ? 'Incoming video call…' : 'Incoming call…');
+      showOverlay('incomingOverlay');
+      playRingtone();
+      callRingTimeoutId = setTimeout(() => { if (callState === 'incoming') declineCall(); }, CALL_RING_TIMEOUT_MS);
+      return;
+    }
+
+    if (type === 'call-decline') {
+      if (callState === 'outgoing' && callPeer && callPeer.id === from) resetCallState();
+      return;
+    }
+
+    if (type === 'call-accept') {
+      if (callState !== 'outgoing' || !callPeer || callPeer.id !== from) return;
+      callState = 'active';
+      pc = createPeerConnection(from);
+      localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+      setupInCallUI();
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      sendSignal(from, { type: 'offer', sdp: offer });
+      return;
+    }
+
+    if (type === 'offer') {
+      if (!pc || !callPeer || callPeer.id !== from) return;
+      await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      for (const c of pendingCandidates) await pc.addIceCandidate(c);
+      pendingCandidates = [];
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      sendSignal(from, { type: 'answer', sdp: answer });
+      return;
+    }
+
+    if (type === 'answer') {
+      if (!pc || !callPeer || callPeer.id !== from) return;
+      await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      for (const c of pendingCandidates) await pc.addIceCandidate(c);
+      pendingCandidates = [];
+      return;
+    }
+
+    if (type === 'candidate') {
+      if (!callPeer || callPeer.id !== from) return;
+      const cand = new RTCIceCandidate(payload.candidate);
+      if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+        await pc.addIceCandidate(cand);
+      } else {
+        pendingCandidates.push(cand);
+      }
+      return;
+    }
+
+    if (type === 'video-state') {
+      if (!callPeer || callPeer.id !== from) return;
+      remoteVideoOn = payload.enabled;
+      updateCallVisuals();
+      return;
+    }
+
+    if (type === 'group-call-request') {
+      if (anyCallActive()) return; // busy - the caller's own ring timeout will simply expire if no one joins
+      pendingGroupCallInfo = { groupId: payload.groupId, groupName: payload.groupName, video: payload.video };
+      document.getElementById('groupIncomingName').textContent = `${fromName} started a call`;
+      document.getElementById('groupIncomingKind').textContent = `in "${payload.groupName}"`;
+      showOverlay('groupIncomingOverlay');
+      playRingtone();
+      groupCallRingTimeoutId = setTimeout(() => {
+        hideAllOverlays();
+        stopRingtone();
+        pendingGroupCallInfo = null;
+        groupCallRingTimeoutId = null;
+      }, CALL_RING_TIMEOUT_MS);
+      return;
+    }
+
+    if (type === 'hangup') {
+      if (callPeer && callPeer.id === from) resetCallState();
+      return;
+    }
+  }
+
+  document.getElementById('voiceCallBtn').addEventListener('click', () => {
+    if (activeFriend) startCall(activeFriend, false);
+    else if (activeGroup) startGroupCall(activeGroup, false);
+  });
+  document.getElementById('videoCallBtn').addEventListener('click', () => {
+    if (activeFriend) startCall(activeFriend, true);
+    else if (activeGroup) startGroupCall(activeGroup, true);
+  });
+  document.getElementById('cancelCallBtn').addEventListener('click', () => endCall(true));
+  document.getElementById('acceptCallBtn').addEventListener('click', acceptCall);
+  document.getElementById('declineCallBtn').addEventListener('click', declineCall);
+  document.getElementById('hangupBtn').addEventListener('click', () => endCall(true));
+
+  // ---------- Minimize call (both 1:1 and group) ----------
+  let minimizedCallType = null; // '1:1' | 'group' | null
+
+  function updateMinimizedPill() {
+    const nameEl = document.getElementById('minimizedCallName');
+    const avatarEl = document.getElementById('minimizedCallAvatar');
+    if (minimizedCallType === '1:1' && callPeer) {
+      nameEl.textContent = callPeer.display_name || callPeer.username;
+      avatarEl.setAttribute('style', avatarStyleFor(callPeer));
+      avatarEl.innerHTML = avatarInner(callPeer);
+    } else if (minimizedCallType === 'group' && groupCallInfo) {
+      nameEl.textContent = groupCallInfo.group.name;
+      avatarEl.setAttribute('style', 'background: linear-gradient(160deg, var(--sky-mid), var(--sky-deep));');
+      avatarEl.innerHTML = '👥';
+    }
+  }
+
+  function minimizeCall(type) {
+    minimizedCallType = type;
+    document.getElementById(type === '1:1' ? 'inCallOverlay' : 'groupCallOverlay').classList.remove('show');
+    updateMinimizedPill();
+    document.getElementById('minimizedCallPill').style.display = 'flex';
+  }
+
+  function restoreCall() {
+    if (!minimizedCallType) return;
+    showOverlay(minimizedCallType === '1:1' ? 'inCallOverlay' : 'groupCallOverlay');
+    document.getElementById('minimizedCallPill').style.display = 'none';
+    minimizedCallType = null;
+  }
+
+  function hideMinimizedPill() {
+    document.getElementById('minimizedCallPill').style.display = 'none';
+    minimizedCallType = null;
+  }
+
+  document.getElementById('minimizeCallBtn').addEventListener('click', () => minimizeCall('1:1'));
+  document.getElementById('groupMinimizeBtn').addEventListener('click', () => minimizeCall('group'));
+  document.getElementById('restoreCallBtn').addEventListener('click', restoreCall);
+  document.getElementById('minimizedHangupBtn').addEventListener('click', () => {
+    if (minimizedCallType === '1:1') endCall(true);
+    else if (minimizedCallType === 'group') leaveGroupCall();
+  });
+
+  document.getElementById('muteBtn').addEventListener('click', () => {
+    if (!localStream) return;
+    const track = localStream.getAudioTracks()[0];
+    track.enabled = !track.enabled;
+    document.getElementById('muteBtn').classList.toggle('off', !track.enabled);
+    document.getElementById('muteIcon').src = track.enabled ? 'icon-mic.png' : 'icon-mic-muted.png';
+  });
+  document.getElementById('toggleVideoBtn').addEventListener('click', () => {
+    if (!localStream || !isVideoCall) return;
+    const track = localStream.getVideoTracks()[0];
+    if (!track) return;
+    localVideoOn = !localVideoOn;
+    track.enabled = localVideoOn;
+    updateCallVisuals();
+    if (callPeer) sendSignal(callPeer.id, { type: 'video-state', enabled: localVideoOn });
+  });
+
+  // ================= GROUP CALLING (mesh WebRTC, up to 5 people) =================
+  async function getGroupMedia(video) {
+    groupRawMicStream = await navigator.mediaDevices.getUserMedia({
+      audio: selectedMicId ? { deviceId: { exact: selectedMicId } } : true,
+      video: video ? { width: 320, height: 240 } : false
+    });
+    groupAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = groupAudioCtx.createMediaStreamSource(new MediaStream(groupRawMicStream.getAudioTracks()));
+    groupMicGainNode = groupAudioCtx.createGain();
+    groupMicGainNode.gain.value = currentMicGain;
+    const dest = groupAudioCtx.createMediaStreamDestination();
+    source.connect(groupMicGainNode).connect(dest);
+    const tracks = [...dest.stream.getAudioTracks()];
+    if (video) tracks.push(...groupRawMicStream.getVideoTracks());
+    return new MediaStream(tracks);
+  }
+
+  async function loadGroupCallMemberProfiles(group) {
+    const ids = group.memberIds || [];
+    if (ids.length === 0) { groupCallMemberProfiles = {}; return; }
+    const { data } = await supabaseClient.from('profiles').select('*').in('id', ids);
+    groupCallMemberProfiles = {};
+    (data || []).forEach(p => { groupCallMemberProfiles[p.id] = p; });
+  }
+
+  function findGroupCallProfile(userId) {
+    if (userId === me.id) return meProfile;
+    return groupCallMemberProfiles[userId] || findProfileById(userId) || { id: userId, username: 'Member' };
+  }
+
+  function getOrCreateTile(userId) {
+    let tile = document.querySelector('.group-tile[data-user-id="' + userId + '"]');
+    if (tile) return tile;
+    const profile = findGroupCallProfile(userId);
+    tile = document.createElement('div');
+    tile.className = 'group-tile';
+    tile.setAttribute('data-user-id', userId);
+    tile.innerHTML =
+      '<video autoplay playsinline' + (userId === me.id ? ' muted' : '') + '></video>' +
+      '<div class="group-tile-placeholder"><div class="avatar-big" style="' + avatarStyleFor(profile) + '">' + avatarInner(profile) + '</div></div>' +
+      '<div class="group-tile-name">' + (profile.display_name || profile.username) + '</div>';
+    document.getElementById('groupTileGrid').appendChild(tile);
+    return tile;
+  }
+
+  function updateGroupTileVisual(userId) {
+    const tile = getOrCreateTile(userId);
+    const video = tile.querySelector('video');
+    const placeholder = tile.querySelector('.group-tile-placeholder');
+    const isVideoCallMode = groupCallInfo && groupCallInfo.video;
+    const on = userId === me.id
+      ? groupLocalVideoOn
+      : (groupParticipantVideo[userId] !== undefined ? groupParticipantVideo[userId] : isVideoCallMode);
+    if (isVideoCallMode && on) {
+      video.style.display = 'block';
+      placeholder.style.display = 'none';
+    } else {
+      video.style.display = 'none';
+      placeholder.style.display = 'flex';
+    }
+  }
+
+  function renderGroupRoster(memberIds) {
+    document.querySelectorAll('.group-tile').forEach(tile => {
+      const id = tile.getAttribute('data-user-id');
+      if (id !== me.id && !memberIds.includes(id)) tile.remove();
+    });
+    getOrCreateTile(me.id);
+    updateGroupTileVisual(me.id);
+    memberIds.forEach(id => { getOrCreateTile(id); updateGroupTileVisual(id); });
+  }
+
+  function groupCallSignal(payload) {
+    if (!groupCallRoomChannel) return;
+    groupCallRoomChannel.send({ type: 'broadcast', event: 'rtc-signal', payload: { ...payload, from: me.id } });
+  }
+
+  function createGroupPeerConnection(remoteId) {
+    const conn = new RTCPeerConnection(RTC_CONFIG);
+    conn.onicecandidate = e => {
+      if (e.candidate) groupCallSignal({ to: remoteId, type: 'candidate', candidate: e.candidate });
+    };
+    conn.ontrack = e => {
+      const tile = getOrCreateTile(remoteId);
+      tile.querySelector('video').srcObject = e.streams[0];
+      updateGroupTileVisual(remoteId);
+      applySpeakerToElement(tile.querySelector('video'));
+    };
+    conn.onconnectionstatechange = () => {
+      if (['disconnected', 'failed', 'closed'].includes(conn.connectionState)) teardownGroupPeer(remoteId);
+    };
+    return conn;
+  }
+
+  function teardownGroupPeer(remoteId) {
+    const pc = groupCallPeers[remoteId];
+    if (pc) { pc.close(); delete groupCallPeers[remoteId]; }
+    delete groupPendingCandidates[remoteId];
+  }
+
+  async function initiateGroupPeer(remoteId) {
+    const pc = createGroupPeerConnection(remoteId);
+    groupCallPeers[remoteId] = pc;
+    groupCallLocalStream.getTracks().forEach(t => pc.addTrack(t, groupCallLocalStream));
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    groupCallSignal({ to: remoteId, type: 'offer', sdp: offer });
+  }
+
+  async function handleGroupRtcSignal(payload) {
+    if (payload.to !== me.id) return;
+    const remoteId = payload.from;
+
+    if (payload.type === 'offer') {
+      let pc = groupCallPeers[remoteId];
+      if (!pc) {
+        pc = createGroupPeerConnection(remoteId);
+        groupCallPeers[remoteId] = pc;
+        groupCallLocalStream.getTracks().forEach(t => pc.addTrack(t, groupCallLocalStream));
+      }
+      await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      const queued = groupPendingCandidates[remoteId] || [];
+      for (const c of queued) await pc.addIceCandidate(c);
+      groupPendingCandidates[remoteId] = [];
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      groupCallSignal({ to: remoteId, type: 'answer', sdp: answer });
+      return;
+    }
+
+    if (payload.type === 'answer') {
+      const pc = groupCallPeers[remoteId];
+      if (!pc) return;
+      await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      const queued = groupPendingCandidates[remoteId] || [];
+      for (const c of queued) await pc.addIceCandidate(c);
+      groupPendingCandidates[remoteId] = [];
+      return;
+    }
+
+    if (payload.type === 'candidate') {
+      const pc = groupCallPeers[remoteId];
+      const cand = new RTCIceCandidate(payload.candidate);
+      if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+        await pc.addIceCandidate(cand);
+      } else {
+        if (!groupPendingCandidates[remoteId]) groupPendingCandidates[remoteId] = [];
+        groupPendingCandidates[remoteId].push(cand);
+      }
+      return;
+    }
+
+    if (payload.type === 'video-state') {
+      groupParticipantVideo[remoteId] = payload.enabled;
+      updateGroupTileVisual(remoteId);
+      return;
+    }
+  }
+
+  function setupGroupPresenceHandlers() {
+    groupCallRoomChannel.on('presence', { event: 'sync' }, () => {
+      const state = groupCallRoomChannel.presenceState();
+      const memberIds = Object.keys(state).filter(id => id !== me.id);
+
+      if (groupCallRingTimeoutId && memberIds.length > 0) {
+        clearTimeout(groupCallRingTimeoutId);
+        groupCallRingTimeoutId = null;
+      }
+
+      renderGroupRoster(memberIds);
+
+      memberIds.forEach(id => {
+        if (!groupCallPeers[id] && me.id < id) initiateGroupPeer(id);
+      });
+      Object.keys(groupCallPeers).forEach(id => {
+        if (!memberIds.includes(id)) teardownGroupPeer(id);
+      });
+    });
+
+    groupCallRoomChannel.on('broadcast', { event: 'rtc-signal' }, ({ payload }) => handleGroupRtcSignal(payload));
+  }
+
+  function startGroupCallTimer() {
+    groupCallSeconds = 0;
+    const el = document.getElementById('groupCallTimer');
+    el.textContent = 'Call Time: 0:00';
+    groupCallTimerInterval = setInterval(() => {
+      groupCallSeconds++;
+      const m = String(Math.floor(groupCallSeconds / 60)).padStart(2, '0');
+      const s = String(groupCallSeconds % 60).padStart(2, '0');
+      el.textContent = `Call Time: ${m}:${s}`;
+      document.getElementById('minimizedCallTime').textContent = `${m}:${s}`;
+    }, 1000);
+  }
+
+  function setupGroupCallUI(group) {
+    document.getElementById('groupCallName').textContent = group.name;
+    document.getElementById('groupTileGrid').innerHTML = '';
+    getOrCreateTile(me.id);
+    updateGroupTileVisual(me.id);
+    const localVideoEl = document.querySelector('.group-tile[data-user-id="' + me.id + '"] video');
+    if (localVideoEl) localVideoEl.srcObject = groupCallLocalStream;
+    document.getElementById('groupMuteBtn').classList.remove('off');
+    document.getElementById('groupMuteIcon').src = 'icon-mic.png';
+    document.getElementById('groupToggleVideoBtn').classList.toggle('off', !groupLocalVideoOn);
+    showOverlay('groupCallOverlay');
+    startGroupCallTimer();
+  }
+
+  async function startGroupCall(group, video) {
+    if (anyCallActive()) return;
+    try {
+      groupCallLocalStream = await getGroupMedia(video);
+    } catch (err) {
+      alert('Could not access microphone/camera: ' + err.message);
+      return;
+    }
+    await loadGroupCallMemberProfiles(group);
+
+    inGroupCall = true;
+    groupCallInfo = { group, video };
+    groupLocalVideoOn = video;
+    groupParticipantVideo = {};
+    groupCallPeers = {};
+    groupPendingCandidates = {};
+
+    setupGroupCallUI(group);
+
+    groupCallRoomChannel = supabaseClient.channel('callroom:' + group.id, { config: { presence: { key: me.id } } });
+    setupGroupPresenceHandlers();
+    groupCallRoomChannel.subscribe(async status => {
+      if (status === 'SUBSCRIBED') await groupCallRoomChannel.track({ video });
+    });
+
+    const memberIds = (group.memberIds || []).filter(id => id !== me.id);
+    memberIds.forEach(id => sendSignal(id, { type: 'group-call-request', groupId: group.id, groupName: group.name, video }));
+
+    groupCallRingTimeoutId = setTimeout(() => {
+      const state = groupCallRoomChannel ? groupCallRoomChannel.presenceState() : {};
+      const others = Object.keys(state).filter(id => id !== me.id);
+      if (others.length === 0) leaveGroupCall();
+    }, CALL_RING_TIMEOUT_MS);
+  }
+
+  async function joinGroupCall(groupId, video) {
+    if (anyCallActive()) return;
+    const group = groupsCache.find(g => g.id === groupId);
+    if (!group) return;
+    try {
+      groupCallLocalStream = await getGroupMedia(video);
+    } catch (err) {
+      alert('Could not access microphone/camera: ' + err.message);
+      return;
+    }
+    await loadGroupCallMemberProfiles(group);
+
+    inGroupCall = true;
+    groupCallInfo = { group, video };
+    groupLocalVideoOn = video;
+    groupParticipantVideo = {};
+    groupCallPeers = {};
+    groupPendingCandidates = {};
+
+    setupGroupCallUI(group);
+
+    groupCallRoomChannel = supabaseClient.channel('callroom:' + group.id, { config: { presence: { key: me.id } } });
+    setupGroupPresenceHandlers();
+    groupCallRoomChannel.subscribe(async status => {
+      if (status === 'SUBSCRIBED') await groupCallRoomChannel.track({ video });
+    });
+  }
+
+  function leaveGroupCall() {
+    if (groupCallTimerInterval) { clearInterval(groupCallTimerInterval); groupCallTimerInterval = null; }
+    if (groupCallRingTimeoutId) { clearTimeout(groupCallRingTimeoutId); groupCallRingTimeoutId = null; }
+    Object.values(groupCallPeers).forEach(pc => pc.close());
+    groupCallPeers = {};
+    groupPendingCandidates = {};
+    groupParticipantVideo = {};
+    if (groupCallRoomChannel) {
+      groupCallRoomChannel.untrack();
+      supabaseClient.removeChannel(groupCallRoomChannel);
+      groupCallRoomChannel = null;
+    }
+    if (groupCallLocalStream) { groupCallLocalStream.getTracks().forEach(t => t.stop()); groupCallLocalStream = null; }
+    if (groupRawMicStream) { groupRawMicStream.getTracks().forEach(t => t.stop()); groupRawMicStream = null; }
+    if (groupAudioCtx) { groupAudioCtx.close(); groupAudioCtx = null; groupMicGainNode = null; }
+    document.getElementById('groupTileGrid').innerHTML = '';
+    inGroupCall = false;
+    groupCallInfo = null;
+    groupLocalVideoOn = false;
+    hideAllOverlays();
+    hideMinimizedPill();
+  }
+
+  document.getElementById('groupAcceptCallBtn').addEventListener('click', () => {
+    if (groupCallRingTimeoutId) { clearTimeout(groupCallRingTimeoutId); groupCallRingTimeoutId = null; }
+    stopRingtone();
+    hideAllOverlays();
+    if (pendingGroupCallInfo) {
+      const info = pendingGroupCallInfo;
+      pendingGroupCallInfo = null;
+      joinGroupCall(info.groupId, info.video);
+    }
+  });
+  document.getElementById('groupDeclineCallBtn').addEventListener('click', () => {
+    if (groupCallRingTimeoutId) { clearTimeout(groupCallRingTimeoutId); groupCallRingTimeoutId = null; }
+    stopRingtone();
+    hideAllOverlays();
+    pendingGroupCallInfo = null;
+  });
+
+  document.getElementById('groupMuteBtn').addEventListener('click', () => {
+    if (!groupCallLocalStream) return;
+    const track = groupCallLocalStream.getAudioTracks()[0];
+    track.enabled = !track.enabled;
+    document.getElementById('groupMuteBtn').classList.toggle('off', !track.enabled);
+    document.getElementById('groupMuteIcon').src = track.enabled ? 'icon-mic.png' : 'icon-mic-muted.png';
+  });
+  document.getElementById('groupToggleVideoBtn').addEventListener('click', () => {
+    if (!groupCallLocalStream || !groupCallInfo || !groupCallInfo.video) return;
+    const track = groupCallLocalStream.getVideoTracks()[0];
+    if (!track) return;
+    groupLocalVideoOn = !groupLocalVideoOn;
+    track.enabled = groupLocalVideoOn;
+    document.getElementById('groupToggleVideoBtn').classList.toggle('off', !groupLocalVideoOn);
+    updateGroupTileVisual(me.id);
+    Object.keys(groupCallPeers).forEach(id => groupCallSignal({ to: id, type: 'video-state', enabled: groupLocalVideoOn }));
+  });
+  document.getElementById('groupHangupBtn').addEventListener('click', leaveGroupCall);
+
+  function subscribeToCallSignals() {
+    myChannel = supabaseClient.channel(personalChannelName(me.id), { config: { broadcast: { self: false } } });
+    myChannel.on('broadcast', { event: 'signal' }, ({ payload }) => handleSignal(payload));
+    myChannel.subscribe();
+  }
+
+  init().then(() => subscribeToCallSignals());
+</script>
+
+</body>
+</html>

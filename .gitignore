@@ -1,0 +1,10 @@
+# Downloaded packages (restore with: npm install)
+node_modules/
+
+# Built desktop app installers (rebuild with your build command)
+dist/
+
+# OS junk
+Thumbs.db
+desktop.ini
+.DS_Store

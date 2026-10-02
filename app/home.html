@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AeroChat - Home</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="sounds.js"></script>
+<script src="theme-engine.js"></script>
+<style>
+  :root {
+    --sky-top: #bfe9ff;
+    --sky-mid: #6fc3f0;
+    --sky-deep: #0a4d8c;
+    --glass: rgba(255,255,255,0.38);
+    --glass-strong: rgba(255,255,255,0.62);
+    --glass-border: rgba(255,255,255,0.75);
+    --ink: #0b3a5c;
+    --ink-soft: #3d6b8c;
+    --lime: #a8e063;
+    --lime-dark: #6fae2f;
+    --aqua-accent: #1fa9a0;
+    --shadow: 0 8px 32px rgba(10,60,100,0.25);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    font-family: 'Nunito Sans', sans-serif;
+    color: var(--ink);
+    overflow: hidden;
+  }
+  body {
+    background: radial-gradient(ellipse at 50% -10%, var(--sky-top) 0%, var(--sky-mid) 45%, var(--sky-deep) 100%);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  h1, h2, h3, .brand { font-family: 'Quicksand', sans-serif; font-weight: 700; }
+
+  /* ---------- Seaweed (behind bubbles) ---------- */
+  .seaweed-layer {
+    position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+  }
+  .seaweed {
+    position: absolute; bottom: -10px;
+    transform-origin: bottom center;
+    animation: sway ease-in-out infinite;
+    opacity: 0.35;
+  }
+  @keyframes sway {
+    0%, 100% { transform: rotate(-4deg); }
+    50% { transform: rotate(4deg); }
+  }
+
+  /* ---------- Bubbles (on top of seaweed) ---------- */
+  .bubble-layer { position: fixed; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }
+  .bubble {
+    position: absolute; bottom: -120px; border-radius: 50%;
+    background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.9), rgba(255,255,255,0.05) 60%, rgba(255,255,255,0.15) 100%);
+    box-shadow: inset 0 0 12px rgba(255,255,255,0.4);
+    animation: rise linear infinite; opacity: 0.5;
+    will-change: transform;
+  }
+  @keyframes rise {
+    0%   { transform: translateY(0) translateX(0); opacity: 0; }
+    10%  { opacity: 0.5; }
+    100% { transform: translateY(-115vh) translateX(30px); opacity: 0; }
+  }
+  .ring-bubble {
+    position: absolute; bottom: -120px; border-radius: 50%;
+    border: 4px solid rgba(255,255,255,0.5);
+    animation: rise linear infinite;
+    opacity: 0.45;
+    will-change: transform;
+  }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    position: relative; z-index: 2; flex-shrink: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 28px 26px;
+    background: var(--topbar-bg, linear-gradient(180deg, #d4f77e 0%, #a8e063 55%, #7fbf3a 100%));
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--lime-dark) 25%, transparent);
+    border-bottom-left-radius: 50% 18px;
+    border-bottom-right-radius: 50% 18px;
+    transition: background 0.4s ease;
+  }
+  .topbar::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 55%;
+    background: linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0));
+    border-bottom-left-radius: 50% 18px; border-bottom-right-radius: 50% 18px;
+    pointer-events: none;
+  }
+  .pill-nav {
+    position: relative; z-index: 1; padding: 9px 22px; border-radius: 999px;
+    background: linear-gradient(160deg, rgba(255,255,255,0.35), rgba(255,255,255,0.05));
+    border: 1px solid rgba(255,255,255,0.7); color: #fff;
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 15px;
+    text-shadow: 0 1px 2px rgba(0,60,0,0.3);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 3px 6px rgba(0,0,0,0.1);
+    text-decoration: none; cursor: pointer; border: none;
+  }
+  .pill-nav.icon-only { padding: 9px 14px; font-size: 15px; }
+  .topbar-right { display: flex; gap: 10px; align-items: center; position: relative; z-index: 1; }
+  .me-pill {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 14px 6px 6px; border-radius: 999px;
+    background: rgba(255,255,255,0.3); border: 1px solid rgba(255,255,255,0.7);
+    color: #fff; font-weight: 700; font-size: 14px; text-shadow: 0 1px 2px rgba(0,60,0,0.3);
+  }
+  .avatar {
+    width: 30px; height: 30px; border-radius: 50%; position: relative; flex-shrink: 0;
+    box-shadow: inset 0 2px 3px rgba(255,255,255,0.6);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-family: 'Quicksand', sans-serif; font-size: 13px;
+    overflow: hidden;
+  }
+  .avatar-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+
+  /* ---------- Center content ---------- */
+  .center-stage {
+    position: relative; z-index: 2; flex: 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 40px; text-align: center; padding: 20px;
+  }
+  .display-title {
+    font-size: 72px; color: #fff; margin: 0;
+    text-shadow: 0 4px 16px rgba(10,60,100,0.4);
+  }
+  .chat-btn {
+    border: none; cursor: pointer;
+    padding: 22px 64px; border-radius: 999px;
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 26px; color: #fff;
+    background: linear-gradient(160deg, var(--lime), var(--lime-dark));
+    box-shadow: inset 0 3px 4px rgba(255,255,255,0.6), 0 8px 20px color-mix(in srgb, var(--lime-dark) 40%, transparent);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .chat-btn:hover { transform: translateY(-3px); box-shadow: inset 0 3px 4px rgba(255,255,255,0.6), 0 12px 26px color-mix(in srgb, var(--lime-dark) 45%, transparent); }
+  .chat-btn:active { transform: scale(0.96); }
+
+  @keyframes riseIn {
+    from { opacity: 0; transform: translateY(26px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .rise-in { animation: riseIn 0.65s cubic-bezier(0.22,1,0.36,1) both; }
+  .rise-1 { animation-delay: 0s; }
+  .rise-2 { animation-delay: 0.15s; }
+</style>
+</head>
+<body>
+
+<div class="seaweed-layer" id="seaweedLayer"></div>
+<div class="bubble-layer" id="bubbleLayer"></div>
+
+<div class="topbar rise-in rise-1">
+  <div></div>
+  <div class="topbar-right">
+    <div class="me-pill"><div class="avatar" id="mePillAvatar"></div><span id="meUsername">...</span></div>
+    <button class="pill-nav icon-only" id="settingsBtn" title="Settings">⚙️</button>
+    <button class="pill-nav" id="logoutBtn">Log out</button>
+  </div>
+</div>
+
+<div class="center-stage rise-in rise-2">
+  <h1 class="display-title">Aero Chat</h1>
+  <button class="chat-btn" id="chatBtn">chat</button>
+</div>
+
+<script>
+  async function init() {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session) { window.location.href = 'index.html'; return; }
+
+    initPageTheme();
+
+    const { data: profile } = await supabaseClient
+      .from('profiles')
+      .select('*')
+      .eq('id', session.user.id)
+      .single();
+
+    const meProfile = profile || { username: 'You' };
+    document.getElementById('meUsername').textContent = meProfile.username;
+
+    const avatarEl = document.getElementById('mePillAvatar');
+    if (meProfile.avatar_url) {
+      avatarEl.innerHTML = `<img class="avatar-img" src="${meProfile.avatar_url}" alt="">`;
+    } else {
+      const palette = ['#7fe3d0','#ffd8a8','#c9a8ff','#ffe08a','#a8e063','#6fd6ff','#ff9fb0'];
+      let hash = 0;
+      for (const ch of meProfile.id || 'x') hash = (hash * 31 + ch.charCodeAt(0)) % palette.length;
+      const c = palette[Math.abs(hash) % palette.length];
+      avatarEl.style.background = `linear-gradient(160deg, ${c}, ${c}dd)`;
+      avatarEl.textContent = (meProfile.display_name || meProfile.username)[0].toUpperCase();
+    }
+  }
+
+  document.getElementById('chatBtn').addEventListener('click', () => {
+    window.location.href = 'dms.html';
+  });
+  document.getElementById('settingsBtn').addEventListener('click', () => {
+    window.location.href = 'dms.html?settings=1';
+  });
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    await supabaseClient.auth.signOut();
+    window.location.href = 'index.html';
+  });
+
+  init();
+</script>
+
+</body>
+</html>
