@@ -319,6 +319,80 @@
   }
   .attach-btn:hover { transform: scale(1.08); background: rgba(255,255,255,0.85); }
   .attach-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+  .attach-btn.open { background: #fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--aqua-accent) 45%, transparent); }
+
+  /* ---------- Emoji & GIF picker ---------- */
+  .composer { position: relative; }
+  .picker {
+    display: none; position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 20;
+    width: 340px; height: 380px; flex-direction: column; overflow: hidden;
+    border-radius: 20px; background: var(--glass-strong); border: 1px solid var(--glass-border, rgba(255,255,255,0.8));
+    backdrop-filter: blur(14px);
+    box-shadow: 0 10px 30px rgba(10,60,100,0.28), inset 0 1px 0 rgba(255,255,255,0.8);
+  }
+  .picker.show { display: flex; animation: pickerPop 0.22s cubic-bezier(0.34,1.56,0.64,1) both; }
+  @keyframes pickerPop { from { opacity: 0; transform: translateY(10px) scale(0.96); } to { opacity: 1; transform: none; } }
+  .picker-header {
+    position: relative; flex-shrink: 0; display: flex; justify-content: center; gap: 8px; padding: 9px 10px 11px;
+    background: var(--topbar-bg, linear-gradient(180deg, #d4f77e 0%, #a8e063 55%, #7fbf3a 100%));
+  }
+  .picker-header::after { /* same glossy shine as the top bar */
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 55%;
+    background: linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0)); pointer-events: none;
+  }
+  .picker-tab {
+    position: relative; z-index: 1; border: none; cursor: pointer; padding: 6px 26px; border-radius: 999px;
+    background: transparent; color: #fff; font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 15px;
+    text-shadow: 0 1px 2px rgba(0,60,0,0.3); transition: background 0.15s ease;
+  }
+  .picker-tab:hover { background: rgba(255,255,255,0.18); }
+  .picker-tab.active {
+    background: linear-gradient(160deg, rgba(255,255,255,0.45), rgba(255,255,255,0.12));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 2px 5px rgba(0,0,0,0.1);
+  }
+  .picker-body { flex: 1; overflow-y: auto; padding: 10px 12px 12px; }
+  .emoji-section-title {
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--ink-soft); margin: 6px 2px 4px;
+  }
+  .emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+  .emoji-btn {
+    border: none; background: transparent; cursor: pointer; font-size: 22px; line-height: 1;
+    padding: 5px 0; border-radius: 10px; transition: transform 0.1s ease, background 0.1s ease;
+  }
+  .emoji-btn:hover { background: rgba(255,255,255,0.7); transform: scale(1.18); }
+  .fav-dropdown-toggle {
+    width: 100%; display: flex; align-items: center; gap: 8px; border: none; cursor: pointer;
+    padding: 9px 12px; border-radius: 14px; background: rgba(255,255,255,0.5);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+    font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 14px; color: var(--ink);
+  }
+  .fav-dropdown-toggle .chev { margin-left: auto; transition: transform 0.2s ease; }
+  .fav-dropdown-toggle.collapsed .chev { transform: rotate(-90deg); }
+  .fav-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px; }
+  .fav-grid.collapsed { display: none; }
+  .fav-item { position: relative; border-radius: 12px; overflow: hidden; cursor: pointer; aspect-ratio: 1; background: rgba(255,255,255,0.35); }
+  .fav-item img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.15s ease; }
+  .fav-item:hover img { transform: scale(1.05); }
+  .fav-remove {
+    position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff;
+    background: var(--status-dnd, #e0534e); color: #fff; font-size: 10px; cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+  }
+  .fav-item:hover .fav-remove { display: flex; }
+  .picker-empty { color: var(--ink-soft); font-size: 13px; line-height: 1.5; text-align: center; padding: 18px 10px; }
+
+  /* ☆ on shared images/GIFs in chat */
+  .msg-image-wrap { position: relative; display: inline-block; }
+  .fav-star {
+    position: absolute; top: 7px; right: 7px; width: 30px; height: 30px; border-radius: 50%; border: none; cursor: pointer;
+    background: rgba(255,255,255,0.85); box-shadow: 0 2px 6px rgba(0,0,0,0.2); font-size: 16px; color: #c9a63a;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 0.15s ease, transform 0.12s ease;
+  }
+  .msg-image-wrap:hover .fav-star, .fav-star.on { opacity: 1; }
+  .fav-star:hover { transform: scale(1.12); }
+  .fav-star.on { background: linear-gradient(160deg, #ffe08a, #ffc53d); color: #fff; text-shadow: 0 1px 2px rgba(138,90,0,0.5); }
 
   ::-webkit-scrollbar { width: 8px; }
   ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.6); border-radius: 8px; }
@@ -638,7 +712,7 @@
 <div class="seaweed-layer" id="seaweedLayer"></div>
 <div class="bubble-layer" id="bubbleLayer"></div>
 
-<div class="topbar rise-in rise-1">
+<div class="topbar">
   <a class="pill-nav" href="home.html">⌂ Home</a>
   <div class="topbar-right">
     <div class="me-pill"><div class="avatar" id="mePillAvatar"></div><span id="meUsername">...</span></div>
@@ -693,6 +767,18 @@
       <div class="composer">
         <button class="attach-btn" id="attachBtn" title="Send an image or GIF">📎</button>
         <input type="file" id="imageInput" accept="image/*" style="display:none">
+        <button class="attach-btn" id="pickerBtn" title="Emojis & GIFs">😀</button>
+        <div class="picker" id="picker">
+          <div class="picker-header">
+            <button class="picker-tab active" data-tab="emoji">emoji</button>
+            <button class="picker-tab" data-tab="gif">gif</button>
+          </div>
+          <div class="picker-body" id="pickerEmojiBody"></div>
+          <div class="picker-body" id="pickerGifBody" style="display:none;">
+            <button class="fav-dropdown-toggle" id="favToggle">⭐ Favorites <span id="favCount"></span><span class="chev">▾</span></button>
+            <div class="fav-grid" id="favGrid"></div>
+          </div>
+        </div>
         <input type="text" id="msgInput" placeholder="Type a message or paste a GIF link">
         <button class="send-btn" id="sendBtn">➤</button>
       </div>
@@ -1180,6 +1266,7 @@
       document.getElementById('broadcastPanel').style.display = 'block';
     }
 
+    loadFavorites();
     await loadFriends();
     await loadGroups();
     renderFriendList();
@@ -1579,7 +1666,8 @@
     if (invite) {
       bodyHtml = buildInviteCardHtml(invite.groupId);
     } else if (isImageUrl(m.content)) {
-      bodyHtml = `<img class="msg-image" src="${m.content}" alt="shared image" onclick="window.open('${m.content}', '_blank')">`;
+      // src and click handler are filled in below (never pasted into HTML - links can contain quotes)
+      bodyHtml = `<div class="msg-image-wrap"><img class="msg-image" alt="shared image"><button class="fav-star" title="Add to favorites">☆</button></div>`;
     } else {
       bodyHtml = `<div class="msg-bubble"></div>`;
     }
@@ -1596,6 +1684,16 @@
         <div class="msg-time">${time}</div>
       </div>`;
     if (!invite && !isImageUrl(m.content)) row.querySelector('.msg-bubble').textContent = m.content;
+    if (!invite && isImageUrl(m.content)) {
+      const url = m.content.trim();
+      const img = row.querySelector('.msg-image');
+      img.src = url;
+      img.addEventListener('click', () => window.open(url, '_blank'));
+      const star = row.querySelector('.fav-star');
+      star.dataset.url = url;
+      updateFavStar(star);
+      star.addEventListener('click', e => { e.stopPropagation(); toggleFavorite(url); });
+    }
     container.appendChild(row);
     if (invite) wireInviteCard(row, invite.groupId);
     if (animate) {
@@ -1742,12 +1840,156 @@
     const text = input.value.trim();
     if (!text || (!activeFriend && !activeGroup)) return;
     input.value = '';
+    await sendContent(text);
+  }
+
+  async function sendContent(text) {
     if (activeGroup) {
       await supabaseClient.from('group_messages').insert({ group_id: activeGroup.id, sender_id: me.id, content: text });
-    } else {
+    } else if (activeFriend) {
       await supabaseClient.from('messages').insert({ sender_id: me.id, receiver_id: activeFriend.id, content: text });
     }
   }
+
+  // ---------- Favorite GIFs ----------
+  let favoriteUrls = []; // newest first
+
+  async function loadFavorites() {
+    const { data } = await supabaseClient
+      .from('gif_favorites').select('url').eq('user_id', me.id).order('created_at', { ascending: false });
+    favoriteUrls = (data || []).map(r => r.url);
+    refreshFavoriteViews();
+  }
+
+  async function toggleFavorite(url) {
+    const wasFav = favoriteUrls.includes(url);
+    // Update the screen right away, then save
+    favoriteUrls = wasFav ? favoriteUrls.filter(u => u !== url) : [url, ...favoriteUrls];
+    refreshFavoriteViews();
+    if (!wasFav) playSound(`bubblepop${1 + Math.floor(Math.random() * 4)}.mp3`, 0.5);
+    const { error } = wasFav
+      ? await supabaseClient.from('gif_favorites').delete().eq('user_id', me.id).eq('url', url)
+      : await supabaseClient.from('gif_favorites').insert({ url });
+    if (error) {
+      favoriteUrls = wasFav ? [url, ...favoriteUrls] : favoriteUrls.filter(u => u !== url);
+      refreshFavoriteViews();
+      playSound('error.mp3', 0.6);
+    }
+  }
+
+  function updateFavStar(star) {
+    const on = favoriteUrls.includes(star.dataset.url);
+    star.classList.toggle('on', on);
+    star.textContent = on ? '★' : '☆';
+    star.title = on ? 'Remove from favorites' : 'Add to favorites';
+  }
+
+  function refreshFavoriteViews() {
+    document.querySelectorAll('.fav-star').forEach(updateFavStar);
+    renderFavoritesGrid();
+  }
+
+  function renderFavoritesGrid() {
+    const grid = document.getElementById('favGrid');
+    document.getElementById('favCount').textContent = favoriteUrls.length ? `(${favoriteUrls.length})` : '';
+    grid.innerHTML = '';
+    if (favoriteUrls.length === 0) {
+      grid.innerHTML = '<div class="picker-empty" style="grid-column:1/-1;">No favorites yet!<br>Hover a GIF in chat and tap ☆ to save it here.</div>';
+      return;
+    }
+    favoriteUrls.forEach(url => {
+      const item = document.createElement('div');
+      item.className = 'fav-item';
+      item.title = 'Send';
+      const img = document.createElement('img');
+      img.src = url;
+      img.loading = 'lazy';
+      const remove = document.createElement('button');
+      remove.className = 'fav-remove';
+      remove.title = 'Remove from favorites';
+      remove.textContent = '✕';
+      remove.addEventListener('click', e => { e.stopPropagation(); toggleFavorite(url); });
+      item.append(img, remove);
+      item.addEventListener('click', () => {
+        if (!activeFriend && !activeGroup) return;
+        sendContent(url);
+        closePicker();
+      });
+      grid.appendChild(item);
+    });
+  }
+
+  // ---------- Emoji & GIF picker ----------
+  const EMOJI_SECTIONS = [
+    ['Smileys', '😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 😚 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🥵 🥶 🥴 😵 🤯 🤠 🥳 😎 🤓 🧐 😕 😟 🙁 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 ☠️ 💩 🤡 👹 👺 👻 👽 👾 🤖'],
+    ['Cats & Hearts', '😺 😸 😹 😻 😼 😽 🙀 😿 😾 ❤️ 🧡 💛 💚 💙 💜 🤎 🖤 🤍 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟'],
+    ['Gestures', '👋 🤚 🖐️ ✋ 🖖 👌 🤌 🤏 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 👐 🤲 🤝 🙏 💪 🫶 👀 🧠'],
+    ['Animals & Nature', '🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🐔 🐧 🐦 🐤 🦆 🦉 🦋 🐌 🐞 🐢 🐍 🐙 🦑 🦀 🐠 🐟 🐡 🐬 🐳 🐋 🦈 🌵 🌲 🌴 🌱 🌿 🍀 🍁 🍄 🌷 🌹 🌺 🌸 🌼 🌻 🌞 🌝 🌛 ⭐ 🌟 ✨ ⚡ 🔥 🌈 ☁️ ❄️ 💧 🌊 🫧'],
+    ['Food', '🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🥕 🌽 🥐 🍞 🧀 🥚 🥓 🍔 🍟 🍕 🌭 🥪 🌮 🌯 🍝 🍜 🍣 🍱 🍤 🍙 🍦 🍩 🍪 🎂 🍰 🧁 🍫 🍬 🍭 🍿 🥤 🧋 ☕ 🍵'],
+    ['Activities & Travel', '⚽ 🏀 🏈 ⚾ 🎾 🏐 🎱 🏓 🎮 🕹️ 🎲 🧩 🎯 🎳 🎨 🎬 🎤 🎧 🎸 🎹 🥁 🏆 🥇 🎉 🎊 🎈 🎁 🚗 🚕 🚌 🏎️ 🚓 🚑 🚒 🚲 🛴 ✈️ 🚀 🛸 🚁 ⛵ 🚢 🏠 🏝️ 🏔️ 🗽 🎡 🎢'],
+    ['Objects & Symbols', '💻 🖥️ ⌨️ 🖱️ 📱 ☎️ 📷 📸 📺 📻 💡 🔦 📚 📝 ✏️ 📌 📎 🔒 🔑 🛠️ 💎 💰 💸 ⏰ ⌛ 📦 ✉️ 💬 💭 🗯️ ✅ ❌ ❓ ❗ ‼️ 💯 🔔 🎵 🎶 ➕ ➖ ✖️ ➗ ♻️ 🆗 🆒 🆕 🆓 🔝']
+  ];
+
+  function buildEmojiPicker() {
+    const body = document.getElementById('pickerEmojiBody');
+    EMOJI_SECTIONS.forEach(([title, list]) => {
+      const heading = document.createElement('div');
+      heading.className = 'emoji-section-title';
+      heading.textContent = title;
+      const grid = document.createElement('div');
+      grid.className = 'emoji-grid';
+      list.split(' ').forEach(emoji => {
+        const btn = document.createElement('button');
+        btn.className = 'emoji-btn';
+        btn.textContent = emoji;
+        btn.addEventListener('click', () => insertEmoji(emoji));
+        grid.appendChild(btn);
+      });
+      body.append(heading, grid);
+    });
+  }
+
+  // Drops the emoji in wherever the cursor is in the message box
+  function insertEmoji(emoji) {
+    const input = document.getElementById('msgInput');
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    input.value = input.value.slice(0, start) + emoji + input.value.slice(end);
+    const caret = start + emoji.length;
+    input.focus();
+    input.setSelectionRange(caret, caret);
+  }
+
+  function switchPickerTab(tab) {
+    document.querySelectorAll('.picker-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.getElementById('pickerEmojiBody').style.display = tab === 'emoji' ? 'block' : 'none';
+    document.getElementById('pickerGifBody').style.display = tab === 'gif' ? 'block' : 'none';
+  }
+  function openPicker() {
+    document.getElementById('picker').classList.add('show');
+    document.getElementById('pickerBtn').classList.add('open');
+  }
+  function closePicker() {
+    document.getElementById('picker').classList.remove('show');
+    document.getElementById('pickerBtn').classList.remove('open');
+  }
+
+  buildEmojiPicker();
+  renderFavoritesGrid();
+  document.getElementById('pickerBtn').addEventListener('click', e => {
+    e.stopPropagation();
+    if (document.getElementById('picker').classList.contains('show')) closePicker(); else openPicker();
+  });
+  document.querySelectorAll('.picker-tab').forEach(t => t.addEventListener('click', () => switchPickerTab(t.dataset.tab)));
+  document.getElementById('favToggle').addEventListener('click', () => {
+    document.getElementById('favToggle').classList.toggle('collapsed');
+    document.getElementById('favGrid').classList.toggle('collapsed');
+  });
+  // Click anywhere else (or press Escape) to close it
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#picker') && !e.target.closest('#pickerBtn')) closePicker();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closePicker(); });
 
   function subscribeToMessages() {
     supabaseClient
