@@ -381,6 +381,22 @@
   }
   .fav-item:hover .fav-remove { display: flex; }
   .picker-empty { color: var(--ink-soft); font-size: 13px; line-height: 1.5; text-align: center; padding: 18px 10px; }
+  .gif-search {
+    width: 100%; padding: 9px 14px; margin-bottom: 10px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.8); background: rgba(255,255,255,0.7);
+    box-shadow: inset 0 1px 2px rgba(10,60,100,0.12);
+    font-family: 'Nunito Sans', sans-serif; font-size: 13.5px; color: var(--ink); outline: none;
+  }
+  .gif-search::placeholder { color: var(--ink-soft); }
+  .gif-search:focus { border-color: var(--aqua-accent); }
+  .gif-attribution { text-align: center; font-size: 10.5px; font-weight: 700; color: var(--ink-soft); margin-top: 10px; opacity: 0.8; }
+  .fav-item .fav-add {
+    position: absolute; top: 5px; right: 5px; width: 24px; height: 24px; border-radius: 50%; border: none;
+    background: rgba(255,255,255,0.9); color: #c9a63a; font-size: 13px; cursor: pointer;
+    display: none; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  }
+  .fav-item:hover .fav-add { display: flex; }
+  .fav-item .fav-add.on { display: flex; background: linear-gradient(160deg, #ffe08a, #ffc53d); color: #fff; }
 
   /* ☆ on shared images/GIFs in chat */
   .msg-image-wrap { position: relative; display: inline-block; }
@@ -775,8 +791,15 @@
           </div>
           <div class="picker-body" id="pickerEmojiBody"></div>
           <div class="picker-body" id="pickerGifBody" style="display:none;">
-            <button class="fav-dropdown-toggle" id="favToggle">⭐ Favorites <span id="favCount"></span><span class="chev">▾</span></button>
-            <div class="fav-grid" id="favGrid"></div>
+            <input type="text" class="gif-search" id="gifSearchInput" placeholder="🔍 Search GIFs">
+            <div id="gifFavoritesSection">
+              <button class="fav-dropdown-toggle" id="favToggle">⭐ Favorites <span id="favCount"></span><span class="chev">▾</span></button>
+              <div class="fav-grid" id="favGrid"></div>
+            </div>
+            <div id="gifSearchSection" style="display:none;">
+              <div class="fav-grid" id="gifResultsGrid"></div>
+              <div class="gif-attribution">Powered by KLIPY</div>
+            </div>
           </div>
         </div>
         <input type="text" id="msgInput" placeholder="Type a message or paste a GIF link">
@@ -1886,8 +1909,92 @@
 
   function refreshFavoriteViews() {
     document.querySelectorAll('.fav-star').forEach(updateFavStar);
+    document.querySelectorAll('.fav-add').forEach(btn => {
+      const on = favoriteUrls.includes(btn.dataset.url);
+      btn.classList.toggle('on', on);
+      btn.textContent = on ? '★' : '☆';
+    });
     renderFavoritesGrid();
   }
+
+  // ---------- GIF search (KLIPY - free, Tenor-compatible API) ----------
+  // Get a free key from KLIPY's Partner Panel (partner.klipy.com) and paste it here.
+  const KLIPY_API_KEY = '';
+  let gifSearchTimer = null;
+  let gifSearchSeq = 0; // ignore results from older searches that finish late
+
+  // Pull the GIF links out of a result, whichever response shape comes back
+  function parseGifResult(r) {
+    const mf = r.media_formats || {};
+    if (mf.gif) return { full: mf.gif.url, preview: (mf.tinygif || mf.nanogif || mf.gif).url };
+    const f = r.file || {};
+    const pick = size => f[size] && f[size].gif && f[size].gif.url;
+    const full = pick('md') || pick('hd') || pick('sm');
+    return full ? { full, preview: pick('sm') || pick('xs') || full } : null;
+  }
+
+  async function searchGifs(query) {
+    const seq = ++gifSearchSeq;
+    const grid = document.getElementById('gifResultsGrid');
+    if (!KLIPY_API_KEY) {
+      grid.innerHTML = '<div class="picker-empty" style="grid-column:1/-1;">GIF search isn\'t set up yet - it needs a free KLIPY API key.</div>';
+      return;
+    }
+    grid.innerHTML = '<div class="picker-empty" style="grid-column:1/-1;">Searching…</div>';
+    try {
+      const url = `https://api.klipy.com/v2/search?q=${encodeURIComponent(query)}&key=${encodeURIComponent(KLIPY_API_KEY)}&limit=24&contentfilter=medium`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (seq !== gifSearchSeq) return;
+      const raw = data.results || (data.data && (data.data.data || data.data)) || [];
+      const gifs = (Array.isArray(raw) ? raw : []).map(parseGifResult).filter(g => g && isImageUrl(g.full));
+      renderGifResults(gifs);
+    } catch (err) {
+      if (seq !== gifSearchSeq) return;
+      grid.innerHTML = '<div class="picker-empty" style="grid-column:1/-1;">Couldn\'t load GIFs right now.</div>';
+    }
+  }
+
+  function renderGifResults(gifs) {
+    const grid = document.getElementById('gifResultsGrid');
+    grid.innerHTML = '';
+    if (gifs.length === 0) {
+      grid.innerHTML = '<div class="picker-empty" style="grid-column:1/-1;">No GIFs found 🫧</div>';
+      return;
+    }
+    gifs.forEach(g => {
+      const item = document.createElement('div');
+      item.className = 'fav-item';
+      item.title = 'Send';
+      const img = document.createElement('img');
+      img.src = g.preview;
+      img.loading = 'lazy';
+      const star = document.createElement('button');
+      star.className = 'fav-add';
+      star.dataset.url = g.full;
+      star.title = 'Add to favorites';
+      const on = favoriteUrls.includes(g.full);
+      star.classList.toggle('on', on);
+      star.textContent = on ? '★' : '☆';
+      star.addEventListener('click', e => { e.stopPropagation(); toggleFavorite(g.full); });
+      item.append(img, star);
+      item.addEventListener('click', () => {
+        if (!activeFriend && !activeGroup) return;
+        sendContent(g.full);
+        closePicker();
+      });
+      grid.appendChild(item);
+    });
+  }
+
+  document.getElementById('gifSearchInput').addEventListener('input', e => {
+    const query = e.target.value.trim();
+    clearTimeout(gifSearchTimer);
+    document.getElementById('gifFavoritesSection').style.display = query ? 'none' : 'block';
+    document.getElementById('gifSearchSection').style.display = query ? 'block' : 'none';
+    if (!query) { gifSearchSeq++; return; }
+    gifSearchTimer = setTimeout(() => searchGifs(query), 350); // wait until they stop typing
+  });
 
   function renderFavoritesGrid() {
     const grid = document.getElementById('favGrid');
@@ -1964,6 +2071,7 @@
     document.querySelectorAll('.picker-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
     document.getElementById('pickerEmojiBody').style.display = tab === 'emoji' ? 'block' : 'none';
     document.getElementById('pickerGifBody').style.display = tab === 'gif' ? 'block' : 'none';
+    if (tab === 'gif') document.getElementById('gifSearchInput').focus();
   }
   function openPicker() {
     document.getElementById('picker').classList.add('show');
