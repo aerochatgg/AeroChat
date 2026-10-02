@@ -140,6 +140,16 @@
   }
   .chat-btn:hover { transform: translateY(-3px); box-shadow: inset 0 3px 4px rgba(255,255,255,0.6), 0 12px 26px color-mix(in srgb, var(--lime-dark) 45%, transparent); }
   .chat-btn:active { transform: scale(0.96); }
+  .chat-btn-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .unread-note {
+    padding: 6px 16px; border-radius: 999px;
+    background: rgba(255,255,255,0.3); border: 1px solid rgba(255,255,255,0.7);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+    color: #fff; font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 15px;
+    text-shadow: 0 1px 2px rgba(10,60,100,0.4);
+    visibility: hidden; /* hidden (but still takes space) when there's nothing unread */
+  }
+  .unread-note.show { visibility: visible; }
 
   @keyframes riseIn {
     from { opacity: 0; transform: translateY(26px); }
@@ -166,7 +176,10 @@
 
 <div class="center-stage rise-in rise-2">
   <h1 class="display-title">Aero Chat</h1>
-  <button class="chat-btn" id="chatBtn">chat</button>
+  <div class="chat-btn-wrap">
+    <button class="chat-btn" id="chatBtn">chat</button>
+    <div class="unread-note" id="unreadNote"></div>
+  </div>
 </div>
 
 <script>
@@ -196,6 +209,27 @@
       avatarEl.style.background = `linear-gradient(160deg, ${c}, ${c}dd)`;
       avatarEl.textContent = (meProfile.display_name || meProfile.username)[0].toUpperCase();
     }
+
+    refreshUnreadCount(session.user.id);
+    // Live-update when a message arrives or gets read (e.g. in the desktop app)
+    supabaseClient
+      .channel('home-unread')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `receiver_id=eq.${session.user.id}` },
+        () => refreshUnreadCount(session.user.id))
+      .subscribe();
+  }
+
+  async function refreshUnreadCount(myId) {
+    const { count, error } = await supabaseClient
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .eq('receiver_id', myId)
+      .is('read_at', null);
+
+    const noteEl = document.getElementById('unreadNote');
+    if (error || !count) { noteEl.classList.remove('show'); return; }
+    noteEl.textContent = `${count} unread message${count === 1 ? '' : 's'}`;
+    noteEl.classList.add('show');
   }
 
   document.getElementById('chatBtn').addEventListener('click', () => {
