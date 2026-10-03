@@ -720,6 +720,7 @@
   }
   .avatar-row { display: flex; align-items: center; gap: 16px; }
   .settings-slider { width: 100%; accent-color: var(--aqua-accent); height: 4px; }
+  .settings-hint { font-size: 11.5px; color: var(--ink-soft); margin-top: 6px; }
   .settings-row { display: flex; align-items: center; justify-content: space-between; }
   .settings-select {
     width: 100%; padding: 10px 12px; border-radius: 12px;
@@ -977,6 +978,17 @@
       <div class="settings-section">
         <div class="settings-label">🎙️ Mic Volume</div>
         <input type="range" min="0" max="200" value="100" class="settings-slider" id="micGainSlider">
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-row">
+          <div class="settings-label" style="margin-bottom:0;">🎧 Noise Suppression</div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="noiseSuppressionToggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="settings-hint">Filters out fans, hum and static on calls. Works mid-call.</div>
       </div>
 
       <div class="settings-section">
@@ -3081,6 +3093,7 @@
   document.getElementById('micGainSlider').addEventListener('input', e => {
     currentMicGain = e.target.value / 100;
     if (micGainNode) micGainNode.gain.value = currentMicGain;
+    if (groupMicGainNode) groupMicGainNode.gain.value = currentMicGain;
   });
   document.getElementById('micGainSlider').addEventListener('change', async () => {
     await supabaseClient.from('profiles').update({ mic_gain: currentMicGain }).eq('id', me.id);
@@ -3228,20 +3241,123 @@
     ALL_OVERLAYS.forEach(o => document.getElementById(o).classList.remove('show'));
   }
 
+  // ---------- Noise suppression ----------
+  // Three light layers, cheap enough for any computer:
+  //  1. the browser's own noise suppression (good at steady noise like fans)
+  //  2. filters: cut rumble/hum below voice range, and hiss way up top
+  //  3. a noise gate that turns the mic way down between words, so static
+  //     doesn't leak through. It learns the room's background level itself.
+  // Saved per device (each computer has its own mic and room).
+  const NOISE_KEY = 'aerochat-noise-suppression';
+  let noiseSuppressionOn = true;
+  try { noiseSuppressionOn = localStorage.getItem(NOISE_KEY) !== 'off'; } catch (e) {}
+  const activeMicChains = new Set(); // so the toggle works mid-call
+
+  // Runs on the audio thread (keeps working even when the window is hidden)
+  const NOISE_GATE_WORKLET = `
+    class NoiseGate extends AudioWorkletProcessor {
+      constructor(options) {
+        super();
+        this.enabled = !(options && options.processorOptions && options.processorOptions.enabled === false);
+        this.floor = 0.002;   // learned background noise level
+        this.env = 0;         // how loud the mic is right now (smoothed)
+        this.gain = 1;
+        this.hold = 0;        // seconds to stay open after speech stops
+        this.port.onmessage = e => { this.enabled = !!e.data.enabled; };
+      }
+      process(inputs, outputs) {
+        const input = inputs[0], output = outputs[0];
+        if (!input || !input[0]) return true;
+        const n = input[0].length;
+        let sum = 0;
+        for (let i = 0; i < n; i++) sum += input[0][i] * input[0][i];
+        const level = Math.sqrt(sum / n);
+        this.env = level > this.env ? level : this.env * 0.9 + level * 0.1;
+        // background level: follows quiet moments fast, loud ones very slowly
+        this.floor += (level - this.floor) * (level < this.floor ? 0.1 : 0.0008);
+        if (this.floor < 0.0003) this.floor = 0.0003;
+        const speaking = this.env > Math.max(this.floor * 3, 0.004);
+        this.hold = speaking ? 0.25 : this.hold - n / sampleRate; // don't clip the ends of words
+        const target = (!this.enabled || this.hold > 0) ? 1 : 0.06; // ~-24dB, not total silence
+        const step = target > this.gain ? 1 / (0.005 * sampleRate) : 1 / (0.12 * sampleRate); // open fast, close gently
+        for (let i = 0; i < n; i++) {
+          this.gain += (target - this.gain) * Math.min(1, step);
+          for (let c = 0; c < output.length; c++) output[c][i] = (input[c] || input[0])[i] * this.gain;
+        }
+        return true;
+      }
+    }
+    registerProcessor('aero-noise-gate', NoiseGate);`;
+  let noiseGateUrl = null;
+
+  function micConstraints() {
+    const audio = { echoCancellation: true, noiseSuppression: noiseSuppressionOn, autoGainControl: true };
+    if (selectedMicId) audio.deviceId = { exact: selectedMicId };
+    return audio;
+  }
+
+  // mic -> filters -> noise gate -> mic volume -> what we send
+  async function buildMicChain(ctx, rawStream) {
+    const source = ctx.createMediaStreamSource(new MediaStream(rawStream.getAudioTracks()));
+    const lowCut = ctx.createBiquadFilter();
+    lowCut.type = 'highpass';
+    const highCut = ctx.createBiquadFilter();
+    highCut.type = 'lowpass';
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = currentMicGain;
+    const dest = ctx.createMediaStreamDestination();
+
+    let gate = null;
+    try {
+      if (!noiseGateUrl) noiseGateUrl = URL.createObjectURL(new Blob([NOISE_GATE_WORKLET], { type: 'application/javascript' }));
+      await ctx.audioWorklet.addModule(noiseGateUrl);
+      gate = new AudioWorkletNode(ctx, 'aero-noise-gate', { processorOptions: { enabled: noiseSuppressionOn } });
+    } catch (err) {
+      console.warn('Noise gate unavailable, using filters only:', err);
+    }
+    source.connect(lowCut).connect(highCut);
+    (gate ? highCut.connect(gate) : highCut).connect(gainNode).connect(dest);
+
+    const chain = { ctx, rawStream, lowCut, highCut, gate };
+    activeMicChains.add(chain);
+    applyNoiseSettings(chain);
+    return { gainNode, stream: dest.stream, chain };
+  }
+
+  function applyNoiseSettings(chain) {
+    const t = chain.ctx.currentTime;
+    chain.lowCut.frequency.setTargetAtTime(noiseSuppressionOn ? 90 : 10, t, 0.02);       // off = let everything through
+    chain.highCut.frequency.setTargetAtTime(noiseSuppressionOn ? 9000 : 20000, t, 0.02);
+    if (chain.gate) chain.gate.port.postMessage({ enabled: noiseSuppressionOn });
+    chain.rawStream.getAudioTracks().forEach(track => {
+      track.applyConstraints({ noiseSuppression: noiseSuppressionOn }).catch(() => {});
+    });
+  }
+
+  function setNoiseSuppression(on) {
+    noiseSuppressionOn = on;
+    try { localStorage.setItem(NOISE_KEY, on ? 'on' : 'off'); } catch (e) {}
+    activeMicChains.forEach(chain => {
+      if (chain.ctx.state === 'closed') activeMicChains.delete(chain);
+      else applyNoiseSettings(chain);
+    });
+  }
+
+  const noiseToggle = document.getElementById('noiseSuppressionToggle');
+  noiseToggle.checked = noiseSuppressionOn;
+  noiseToggle.addEventListener('change', () => setNoiseSuppression(noiseToggle.checked));
+
   async function getMedia(video) {
     rawMicStream = await navigator.mediaDevices.getUserMedia({
-      audio: selectedMicId ? { deviceId: { exact: selectedMicId } } : true,
+      audio: micConstraints(),
       video: video ? { width: 320, height: 240 } : false
     });
 
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = audioCtx.createMediaStreamSource(new MediaStream(rawMicStream.getAudioTracks()));
-    micGainNode = audioCtx.createGain();
-    micGainNode.gain.value = currentMicGain;
-    const dest = audioCtx.createMediaStreamDestination();
-    source.connect(micGainNode).connect(dest);
+    const mic = await buildMicChain(audioCtx, rawMicStream);
+    micGainNode = mic.gainNode;
 
-    const tracks = [...dest.stream.getAudioTracks()];
+    const tracks = [...mic.stream.getAudioTracks()];
     if (video) tracks.push(...rawMicStream.getVideoTracks());
     return new MediaStream(tracks);
   }
@@ -3734,16 +3850,13 @@
   // ================= GROUP CALLING (mesh WebRTC, up to 5 people) =================
   async function getGroupMedia(video) {
     groupRawMicStream = await navigator.mediaDevices.getUserMedia({
-      audio: selectedMicId ? { deviceId: { exact: selectedMicId } } : true,
+      audio: micConstraints(),
       video: video ? { width: 320, height: 240 } : false
     });
     groupAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = groupAudioCtx.createMediaStreamSource(new MediaStream(groupRawMicStream.getAudioTracks()));
-    groupMicGainNode = groupAudioCtx.createGain();
-    groupMicGainNode.gain.value = currentMicGain;
-    const dest = groupAudioCtx.createMediaStreamDestination();
-    source.connect(groupMicGainNode).connect(dest);
-    const tracks = [...dest.stream.getAudioTracks()];
+    const mic = await buildMicChain(groupAudioCtx, groupRawMicStream);
+    groupMicGainNode = mic.gainNode;
+    const tracks = [...mic.stream.getAudioTracks()];
     if (video) tracks.push(...groupRawMicStream.getVideoTracks());
     return new MediaStream(tracks);
   }
