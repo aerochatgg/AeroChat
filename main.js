@@ -1,6 +1,12 @@
 const { app, BrowserWindow, session, desktopCapturer, ipcMain, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 
+// Name notifications and the tray balloon "AeroChat" instead of "Electron".
+// On Windows the name comes from this ID, which must match build.appId in
+// package.json (the installer registers the Start Menu shortcut under it).
+app.setName('AeroChat');
+if (process.platform === 'win32') app.setAppUserModelId('com.aerochat.app');
+
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;      // true only when the user really quits (tray menu, shutdown...)
