@@ -1,7 +1,34 @@
-const { app, BrowserWindow, session, desktopCapturer, ipcMain } = require('electron');
+const { app, BrowserWindow, session, desktopCapturer, ipcMain, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 
 let mainWindow = null;
+let tray = null;
+let isQuitting = false;      // true only when the user really quits (tray menu, shutdown...)
+let shownTrayHint = false;   // "still running in the tray" balloon, once per launch
+
+// Only one AeroChat at a time - opening it again just brings the window back
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) app.quit();
+else app.on('second-instance', showWindow);
+
+function showWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function createTray() {
+  const icon = nativeImage.createFromPath(path.join(__dirname, 'build', 'icon.png')).resize({ width: 16, height: 16 });
+  tray = new Tray(icon);
+  tray.setToolTip('AeroChat');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Open AeroChat', click: showWindow },
+    { type: 'separator' },
+    { label: 'Quit AeroChat', click: () => { isQuitting = true; app.quit(); } }
+  ]));
+  tray.on('click', showWindow);
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -15,18 +42,42 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.js'),
+      // keep messages, calls and notifications running at full speed while hidden in the tray
+      backgroundThrottling: false
     }
   });
 
   win.setMenuBarVisibility(false); // hides the default File/Edit/View menu bar for a cleaner app feel
 
+  // Closing the window hides it to the tray instead of quitting
+  win.on('close', e => {
+    if (isQuitting) return;
+    e.preventDefault();
+    win.hide();
+    if (!shownTrayHint && tray && process.platform === 'win32') {
+      shownTrayHint = true;
+      tray.displayBalloon({
+        iconType: 'info',
+        title: 'AeroChat is still running',
+        content: 'It\'s down here in the tray. Right-click the icon to quit.'
+      });
+    }
+  });
+
   win.loadFile(path.join(__dirname, 'app', 'index.html'));
   mainWindow = win;
 }
 
+app.on('before-quit', () => { isQuitting = true; }); // e.g. Windows shutting down
+
+// Clicking a message notification while hidden should bring the window back
+ipcMain.on('show-window', showWindow);
+
 app.whenReady().then(() => {
+  if (!gotSingleInstanceLock) return; // this copy is closing - the other one was brought forward
   createWindow();
+  createTray();
 
   // Explicitly allow microphone/camera access for calling — without this,
   // some Windows setups and any future macOS build can silently block it.
@@ -64,6 +115,7 @@ app.whenReady().then(() => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    else showWindow();
   });
 });
 

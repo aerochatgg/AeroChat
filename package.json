@@ -19,6 +19,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "build/icon.png",
       "app/**/*"
     ],
     "directories": {

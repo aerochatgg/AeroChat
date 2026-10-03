@@ -1361,6 +1361,7 @@
     if (document.hasFocus()) return;
     const n = new Notification(title, { body, icon: iconUrl || 'notification-icon.png' });
     n.onclick = () => {
+      if (window.aeroDesktop && window.aeroDesktop.showWindow) window.aeroDesktop.showWindow(); // back from the tray
       window.focus();
       if (onClick) onClick();
       n.close();
