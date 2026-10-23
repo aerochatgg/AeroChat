@@ -168,7 +168,7 @@ const DENSITY_PRESETS = {
   comfortable: { spacing: 12, bubble: 1,    avatar: 32, text: 14.5 }, // the original look
   cozy:        { spacing: 22, bubble: 1.35, avatar: 44, text: 16 }
 };
-const DEFAULT_APPEARANCE = { density: 'comfortable', customDensity: null, roundness: 1, effects: {} };
+const DEFAULT_APPEARANCE = { density: 'comfortable', customDensity: null, roundness: 1, effects: {}, seasonal: false };
 let currentAppearance = { ...DEFAULT_APPEARANCE };
 
 function normalizeAppearance(a) {
@@ -234,9 +234,74 @@ function applyRoundness(k) {
 function applyAppearance(a) {
   currentAppearance = normalizeAppearance(a);
   applyDensityVars(currentAppearance);
-  const run = () => applyRoundness(currentAppearance.roundness);
+  const run = () => { applyRoundness(currentAppearance.roundness); applySeasonal(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run, { once: true });
   else run();
+}
+
+// ---------- Seasonal effects (opt-in) ----------
+// Picked from today's date (northern hemisphere seasons). Drawn in their own
+// layer behind the app, on top of whatever the theme's background is doing.
+const SEASONS = {
+  fall:   { label: '🍂 Falling leaves',  dates: 'Sep – Nov', count: 18 },
+  winter: { label: '❄️ Snow',            dates: 'Dec – Feb', count: 45 },
+  spring: { label: '🌸 Cherry blossoms', dates: 'Mar – May', count: 22 }
+};
+let __seasonPreview = null;  // theme editor's "preview" buttons (never saved)
+let __renderedSeason = null;
+
+function currentSeason(date = new Date()) {
+  const m = date.getMonth(); // Jan = 0
+  if (m === 11 || m <= 1) return 'winter';  // Dec - Feb
+  if (m >= 8 && m <= 10) return 'fall';     // Sep - Nov
+  if (m >= 2 && m <= 4) return 'spring';    // Mar - May
+  return null; // summer: nothing
+}
+
+function previewSeason(season) {
+  __seasonPreview = season;
+  applySeasonal();
+}
+
+function applySeasonal() {
+  if (!document.getElementById('bubbleLayer')) return; // only pages with a themed background
+  const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const season = __seasonPreview || (currentAppearance.seasonal && !reducedMotion ? currentSeason() : null);
+  if (season === __renderedSeason) return;
+  __renderedSeason = season;
+
+  let layer = document.getElementById('seasonLayer');
+  if (!layer) {
+    layer = document.createElement('div');
+    layer.id = 'seasonLayer';
+    layer.className = 'season-layer';
+    document.body.prepend(layer);
+  }
+  layer.innerHTML = '';
+  if (!season) return;
+
+  const cfg = SEASONS[season];
+  for (let i = 0; i < cfg.count; i++) {
+    const p = document.createElement('div');
+    p.className = 'season-particle';
+    p.style.left = Math.random() * 100 + 'vw';
+    const inner = document.createElement('span');
+    if (season === 'winter') {
+      const size = 5 + Math.random() * 8;
+      inner.className = 'season-snow';
+      inner.style.width = inner.style.height = size + 'px';
+      p.style.animationDuration = (9 + Math.random() * 10) + 's';
+    } else {
+      inner.textContent = season === 'fall' ? (Math.random() < 0.5 ? '🍂' : '🍁') : '🌸';
+      inner.style.fontSize = (season === 'fall' ? 18 + Math.random() * 14 : 13 + Math.random() * 9) + 'px';
+      p.style.animationDuration = (11 + Math.random() * 12) + 's';
+    }
+    p.style.animationDelay = (Math.random() * -22) + 's';
+    inner.style.animationDuration = (2.5 + Math.random() * 3) + 's';
+    inner.style.animationDelay = (Math.random() * -4) + 's';
+    p.appendChild(inner);
+    layer.appendChild(p);
+  }
 }
 
 async function getSavedAppearance() {
@@ -326,6 +391,14 @@ async function saveAppearance(a) {
 
     html[data-font]:not([data-font="aero"]) body,
     html[data-font]:not([data-font="aero"]) body * { font-family: var(--app-font) !important; }
+
+    /* Seasonal effects: fall straight down while swaying side to side */
+    .season-layer { position: fixed; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+    .season-particle { position: absolute; top: -40px; animation: seasonFall linear infinite; will-change: transform; }
+    .season-particle > span { display: inline-block; animation: seasonSway ease-in-out infinite alternate; filter: drop-shadow(0 2px 3px rgba(0,30,60,0.25)); }
+    .season-snow { border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff, #eaf6ff 70%); box-shadow: 0 0 8px rgba(255,255,255,0.95), 0 0 0 1px rgba(80,140,200,0.35); opacity: 0.95; }
+    @keyframes seasonFall { to { transform: translateY(calc(100vh + 80px)); } }
+    @keyframes seasonSway { from { transform: translateX(-28px) rotate(-30deg); } to { transform: translateX(28px) rotate(40deg); } }
   `;
   const style = document.createElement('style');
   style.textContent = css;

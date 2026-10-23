@@ -194,6 +194,10 @@
   }
   .text-btn:hover { text-decoration: underline; }
   .effects-empty { grid-column: 1 / -1; color: var(--ink-soft); font-size: 13px; }
+  .season-now { font-size: 13px; color: var(--ink-soft); margin: -4px 2px 12px; }
+  .season-previews { align-items: center; }
+  .season-preview-label { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); margin-right: 2px; }
+  .seg-btn.small { padding: 5px 12px; font-size: 12.5px; }
 </style>
 </head>
 <body>
@@ -263,6 +267,21 @@
     <div class="preview-block">
       <div class="preview-block-label">Effect Intensity <button class="text-btn" id="resetEffectsBtn">Reset to theme default</button></div>
       <div class="slider-grid" id="effectSliders"></div>
+    </div>
+
+    <div class="preview-block">
+      <div class="preview-block-label">Seasonal Effects</div>
+      <div class="seg-row" id="seasonalToggle">
+        <button class="seg-btn" data-seasonal="off">Off</button>
+        <button class="seg-btn" data-seasonal="on">On - change with the seasons</button>
+      </div>
+      <div class="season-now" id="seasonNow"></div>
+      <div class="seg-row season-previews">
+        <span class="season-preview-label">Preview:</span>
+        <button class="seg-btn small" data-preview="winter">❄️ Snow</button>
+        <button class="seg-btn small" data-preview="fall">🍂 Leaves</button>
+        <button class="seg-btn small" data-preview="spring">🌸 Blossoms</button>
+      </div>
     </div>
 
     <div class="preview-block">
@@ -377,6 +396,7 @@
     document.getElementById('roundnessSlider').value = appearance.roundness;
     document.getElementById('roundnessValue').textContent = Math.round(appearance.roundness * 100) + '%';
     renderEffectSliders();
+    renderSeasonalControls();
   }
 
   function renderEffectSliders() {
@@ -439,6 +459,28 @@
     appearance.effects = {};
     appearanceChanged({ redrawBackground: true });
   });
+
+  // ---------- Seasonal effects ----------
+  let previewingSeason = null;
+  function renderSeasonalControls() {
+    document.querySelectorAll('#seasonalToggle .seg-btn').forEach(b =>
+      b.classList.toggle('active', (b.dataset.seasonal === 'on') === !!appearance.seasonal));
+    const season = currentSeason();
+    document.getElementById('seasonNow').textContent = season
+      ? `Right now: ${SEASONS[season].label} (${SEASONS[season].dates})`
+      : 'Right now: summer - no seasonal effect until September 🌞';
+    document.querySelectorAll('[data-preview]').forEach(b => b.classList.toggle('active', b.dataset.preview === previewingSeason));
+  }
+  document.querySelectorAll('#seasonalToggle .seg-btn').forEach(btn => btn.addEventListener('click', () => {
+    appearance.seasonal = btn.dataset.seasonal === 'on';
+    appearanceChanged();
+  }));
+  // Previews just show the effect here for a look - they're never saved
+  document.querySelectorAll('[data-preview]').forEach(btn => btn.addEventListener('click', () => {
+    previewingSeason = previewingSeason === btn.dataset.preview ? null : btn.dataset.preview;
+    previewSeason(previewingSeason);
+    renderSeasonalControls();
+  }));
 
   let currentFontId = 'aero';
 
