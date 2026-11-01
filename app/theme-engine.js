@@ -110,6 +110,51 @@ const THEMES = {
   }
 };
 
+// ---------- Seasonal theme ----------
+// One theme that changes itself with the date (northern hemisphere seasons).
+// Summer has no palette of its own, so it borrows the default Aero look.
+const SEASON_PALETTES = {
+  fall: {
+    swatch: ['#f2933a', '#8f3d0c'],
+    vars: {
+      '--sky-top': '#ffe3b8', '--sky-mid': '#f2933a', '--sky-deep': '#8f3d0c',
+      '--glass': 'rgba(255,245,230,0.42)', '--glass-strong': 'rgba(255,248,238,0.68)', '--glass-border': 'rgba(255,255,255,0.75)',
+      '--ink': '#4a2508', '--ink-soft': '#85501f',
+      '--lime': '#ffb347', '--lime-dark': '#d9701a', '--aqua-accent': '#d9611a',
+      '--topbar-bg': 'linear-gradient(180deg, #ffd08a 0%, #f2933a 55%, #c9601a 100%)',
+      '--msg-bg': 'rgba(255,248,238,0.68)', '--msg-border': 'rgba(255,255,255,0.85)'
+    }
+  },
+  winter: {
+    swatch: ['#bfe6fa', '#5fa8d6'],
+    vars: {
+      '--sky-top': '#f2fbff', '--sky-mid': '#bfe6fa', '--sky-deep': '#5fa8d6',
+      '--glass': 'rgba(255,255,255,0.42)', '--glass-strong': 'rgba(255,255,255,0.68)', '--glass-border': 'rgba(255,255,255,0.85)',
+      '--ink': '#123f5e', '--ink-soft': '#3d6a89',
+      '--lime': '#8fd3f4', '--lime-dark': '#3f97cc', '--aqua-accent': '#2f8fc9',
+      '--topbar-bg': 'linear-gradient(180deg, #a9dcf7 0%, #5fb4e6 55%, #2f7fbf 100%)',
+      '--msg-bg': 'rgba(255,255,255,0.68)', '--msg-border': 'rgba(255,255,255,0.9)'
+    }
+  },
+  spring: {
+    swatch: ['#8fd66b', '#2f7d3a'],
+    vars: {
+      '--sky-top': '#e4f9d2', '--sky-mid': '#8fd66b', '--sky-deep': '#2f7d3a',
+      '--glass': 'rgba(255,255,255,0.4)', '--glass-strong': 'rgba(255,255,255,0.66)', '--glass-border': 'rgba(255,255,255,0.8)',
+      '--ink': '#1f4a22', '--ink-soft': '#46734a',
+      '--lime': '#a8e063', '--lime-dark': '#5fae3f', '--aqua-accent': '#3fa05a',
+      '--topbar-bg': 'linear-gradient(180deg, #d4f77e 0%, #8fd66b 55%, #4f9e3f 100%)',
+      '--msg-bg': 'rgba(255,255,255,0.66)', '--msg-border': 'rgba(255,255,255,0.85)'
+    }
+  }
+};
+THEMES.seasonal = {
+  label: 'Seasonal',
+  swatch: (SEASON_PALETTES[currentSeason()] || THEMES.aero).swatch,
+  vars: THEMES.aero.vars, // swapped for the season's colors in applyThemeVars
+  background: { seasonal: true }
+};
+
 // ---------- Fonts ----------
 // 'aero' keeps each page's own Quicksand + Nunito Sans pair. The others
 // replace every font in the app with one family.
@@ -168,7 +213,7 @@ const DENSITY_PRESETS = {
   comfortable: { spacing: 12, bubble: 1,    avatar: 32, text: 14.5 }, // the original look
   cozy:        { spacing: 22, bubble: 1.35, avatar: 44, text: 16 }
 };
-const DEFAULT_APPEARANCE = { density: 'comfortable', customDensity: null, roundness: 1, effects: {}, seasonal: false };
+const DEFAULT_APPEARANCE = { density: 'comfortable', customDensity: null, roundness: 1, effects: {} };
 let currentAppearance = { ...DEFAULT_APPEARANCE };
 
 function normalizeAppearance(a) {
@@ -234,18 +279,17 @@ function applyRoundness(k) {
 function applyAppearance(a) {
   currentAppearance = normalizeAppearance(a);
   applyDensityVars(currentAppearance);
-  const run = () => { applyRoundness(currentAppearance.roundness); applySeasonal(); };
+  const run = () => applyRoundness(currentAppearance.roundness);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run, { once: true });
   else run();
 }
 
-// ---------- Seasonal effects (opt-in) ----------
-// Picked from today's date (northern hemisphere seasons). Drawn in their own
-// layer behind the app, on top of whatever the theme's background is doing.
+// ---------- Seasonal theme effects ----------
+// Drawn in their own layer behind the app (see SEASON_PALETTES for the colors).
 const SEASONS = {
-  fall:   { label: '🍂 Falling leaves',  dates: 'Sep – Nov', count: 18 },
-  winter: { label: '❄️ Snow',            dates: 'Dec – Feb', count: 45 },
-  spring: { label: '🌸 Cherry blossoms', dates: 'Mar – May', count: 22 }
+  fall:   { label: '🍂 Fall',   dates: 'Sep – Nov', count: 18 },
+  winter: { label: '❄️ Winter', dates: 'Dec – Feb', count: 45 },
+  spring: { label: '🌸 Spring', dates: 'Mar – May', count: 22 }
 };
 let __seasonPreview = null;  // theme editor's "preview" buttons (never saved)
 let __renderedSeason = null;
@@ -255,20 +299,25 @@ function currentSeason(date = new Date()) {
   if (m === 11 || m <= 1) return 'winter';  // Dec - Feb
   if (m >= 8 && m <= 10) return 'fall';     // Sep - Nov
   if (m >= 2 && m <= 4) return 'spring';    // Mar - May
-  return null; // summer: nothing
+  return null; // summer
+}
+function activeSeason() {
+  return __seasonPreview || currentSeason();
 }
 
 function previewSeason(season) {
   __seasonPreview = season;
-  applySeasonal();
+  if (document.documentElement.getAttribute('data-theme') !== 'seasonal') return;
+  applyThemeVars('seasonal');
+  applyThemeBackground('seasonal');
 }
 
-function applySeasonal() {
-  if (!document.getElementById('bubbleLayer')) return; // only pages with a themed background
+function renderSeasonEffects(season, amount = 1, speed = 1) {
   const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const season = __seasonPreview || (currentAppearance.seasonal && !reducedMotion ? currentSeason() : null);
-  if (season === __renderedSeason) return;
-  __renderedSeason = season;
+  const show = season && amount > 0 && !reducedMotion;
+  const key = show ? `${season}|${amount}|${speed}` : null;
+  if (key === __renderedSeason) return; // keep what's already falling
+  __renderedSeason = key;
 
   let layer = document.getElementById('seasonLayer');
   if (!layer) {
@@ -278,25 +327,27 @@ function applySeasonal() {
     document.body.prepend(layer);
   }
   layer.innerHTML = '';
-  if (!season) return;
+  // Snow would vanish behind the pale glass, so it falls in front (clicks pass through)
+  layer.classList.toggle('in-front', season === 'winter');
+  if (!show) return;
 
-  const cfg = SEASONS[season];
-  for (let i = 0; i < cfg.count; i++) {
+  const count = Math.round(SEASONS[season].count * amount);
+  for (let i = 0; i < count; i++) {
     const p = document.createElement('div');
     p.className = 'season-particle';
     p.style.left = Math.random() * 100 + 'vw';
     const inner = document.createElement('span');
     if (season === 'winter') {
-      const size = 5 + Math.random() * 8;
+      const size = 3 + Math.random() * 6;
       inner.className = 'season-snow';
       inner.style.width = inner.style.height = size + 'px';
-      p.style.animationDuration = (9 + Math.random() * 10) + 's';
+      p.style.animationDuration = ((9 + Math.random() * 10) / speed) + 's';
     } else {
       inner.textContent = season === 'fall' ? (Math.random() < 0.5 ? '🍂' : '🍁') : '🌸';
       inner.style.fontSize = (season === 'fall' ? 18 + Math.random() * 14 : 13 + Math.random() * 9) + 'px';
-      p.style.animationDuration = (11 + Math.random() * 12) + 's';
+      p.style.animationDuration = ((11 + Math.random() * 12) / speed) + 's';
     }
-    p.style.animationDelay = (Math.random() * -22) + 's';
+    p.style.animationDelay = ((Math.random() * -22) / speed) + 's';
     inner.style.animationDuration = (2.5 + Math.random() * 3) + 's';
     inner.style.animationDelay = (Math.random() * -4) + 's';
     p.appendChild(inner);
@@ -392,8 +443,9 @@ async function saveAppearance(a) {
     html[data-font]:not([data-font="aero"]) body,
     html[data-font]:not([data-font="aero"]) body * { font-family: var(--app-font) !important; }
 
-    /* Seasonal effects: fall straight down while swaying side to side */
+    /* Seasonal theme: effects fall straight down while swaying side to side */
     .season-layer { position: fixed; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+    .season-layer.in-front { z-index: 5; }
     .season-particle { position: absolute; top: -40px; animation: seasonFall linear infinite; will-change: transform; }
     .season-particle > span { display: inline-block; animation: seasonSway ease-in-out infinite alternate; filter: drop-shadow(0 2px 3px rgba(0,30,60,0.25)); }
     .season-snow { border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff, #eaf6ff 70%); box-shadow: 0 0 8px rgba(255,255,255,0.95), 0 0 0 1px rgba(80,140,200,0.35); opacity: 0.95; }
@@ -490,6 +542,9 @@ function spawnBackground(baseBg) {
   const fish = pick('fish', bg.fish);
   const squares = pick('squares', bg.squares);
   const ringRate = bg.rings ? pick('ringRate', 1) : 0;
+  const season = bg.seasonal ? activeSeason() : null;
+  renderSeasonEffects(season, pick('seasonAmount', 1), speed('seasonSpeed'));
+  if (bg.seasonal && !season) spawnBubblesInto(bubbleLayer, THEMES.aero.background.bubbles); // summer = Aero
   if (seaweed && seaweedLayer) spawnSeaweedInto(seaweedLayer, seaweed, bg.seaweedColor || '#0a4d8c', bg.seaweedOpacity ?? 0.35);
   if (bg.sunRays) spawnSunRays(bubbleLayer);
   if (bubbles) spawnBubblesInto(bubbleLayer, bubbles, speed('bubbleSpeed'));
@@ -541,7 +596,8 @@ function applyThemeVars(themeId) {
   const theme = THEMES[themeId] || THEMES.aero;
   const root = document.documentElement.style;
   root.removeProperty('--ring-color'); // left over from a custom theme
-  Object.entries(theme.vars).forEach(([k, v]) => root.setProperty(k, v));
+  const palette = themeId === 'seasonal' ? SEASON_PALETTES[activeSeason()] : null;
+  Object.entries((palette || theme).vars).forEach(([k, v]) => root.setProperty(k, v));
   document.documentElement.setAttribute('data-theme', themeId);
 }
 

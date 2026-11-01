@@ -269,18 +269,14 @@
       <div class="slider-grid" id="effectSliders"></div>
     </div>
 
-    <div class="preview-block">
-      <div class="preview-block-label">Seasonal Effects</div>
-      <div class="seg-row" id="seasonalToggle">
-        <button class="seg-btn" data-seasonal="off">Off</button>
-        <button class="seg-btn" data-seasonal="on">On - change with the seasons</button>
-      </div>
+    <div class="preview-block" id="seasonalBlock" style="display:none;">
+      <div class="preview-block-label">Seasonal Theme</div>
       <div class="season-now" id="seasonNow"></div>
       <div class="seg-row season-previews">
         <span class="season-preview-label">Preview:</span>
-        <button class="seg-btn small" data-preview="winter">❄️ Snow</button>
-        <button class="seg-btn small" data-preview="fall">🍂 Leaves</button>
-        <button class="seg-btn small" data-preview="spring">🌸 Blossoms</button>
+        <button class="seg-btn small" data-preview="fall">🍂 Fall</button>
+        <button class="seg-btn small" data-preview="winter">❄️ Winter</button>
+        <button class="seg-btn small" data-preview="spring">🌸 Spring</button>
       </div>
     </div>
 
@@ -366,7 +362,9 @@
     { key: 'fishSpeed',   label: '🐟 Fish speed',      base: bg => bg.fish && 1,      min: 0.25, max: 3,  step: 0.25, unit: '×' },
     { key: 'squares',     label: '◻️ Squares',         base: bg => bg.squares,        min: 0,    max: 30, step: 1 },
     { key: 'squareSpeed', label: '◻️ Square speed',    base: bg => bg.squares && 1,   min: 0.25, max: 3,  step: 0.25, unit: '×' },
-    { key: 'ringRate',    label: '⭕ Ring frequency',  base: bg => bg.rings && 1,     min: 0,    max: 3,  step: 0.25, unit: '×' }
+    { key: 'ringRate',    label: '⭕ Ring frequency',  base: bg => bg.rings && 1,     min: 0,    max: 3,  step: 0.25, unit: '×' },
+    { key: 'seasonAmount', label: '🍂 Seasonal amount', base: bg => bg.seasonal && 1,  min: 0,    max: 3,  step: 0.25, unit: '×' },
+    { key: 'seasonSpeed',  label: '🍂 Seasonal speed',  base: bg => bg.seasonal && 1,  min: 0.25, max: 3,  step: 0.25, unit: '×' }
   ];
 
   let saveAppearanceTimer = null;
@@ -460,22 +458,17 @@
     appearanceChanged({ redrawBackground: true });
   });
 
-  // ---------- Seasonal effects ----------
+  // ---------- Seasonal theme ----------
   let previewingSeason = null;
   function renderSeasonalControls() {
-    document.querySelectorAll('#seasonalToggle .seg-btn').forEach(b =>
-      b.classList.toggle('active', (b.dataset.seasonal === 'on') === !!appearance.seasonal));
+    document.getElementById('seasonalBlock').style.display = currentThemeId === 'seasonal' ? 'block' : 'none';
     const season = currentSeason();
     document.getElementById('seasonNow').textContent = season
-      ? `Right now: ${SEASONS[season].label} (${SEASONS[season].dates})`
-      : 'Right now: summer - no seasonal effect until September 🌞';
+      ? `Right now: ${SEASONS[season].label} (${SEASONS[season].dates}). Changes by itself with the seasons.`
+      : 'Right now: summer, so it looks like Aero until September 🌞';
     document.querySelectorAll('[data-preview]').forEach(b => b.classList.toggle('active', b.dataset.preview === previewingSeason));
   }
-  document.querySelectorAll('#seasonalToggle .seg-btn').forEach(btn => btn.addEventListener('click', () => {
-    appearance.seasonal = btn.dataset.seasonal === 'on';
-    appearanceChanged();
-  }));
-  // Previews just show the effect here for a look - they're never saved
+  // Previews just show a season here for a look - they're never saved
   document.querySelectorAll('[data-preview]').forEach(btn => btn.addEventListener('click', () => {
     previewingSeason = previewingSeason === btn.dataset.preview ? null : btn.dataset.preview;
     previewSeason(previewingSeason);
@@ -550,6 +543,8 @@
   async function selectTheme(id) {
     if (id === currentThemeId) { renderThemeRows(); return; }
     currentThemeId = id;
+    previewingSeason = null;
+    previewSeason(null);
     document.getElementById('customEditorBlock').style.display = id === 'custom' ? 'block' : 'none';
     if (id === 'custom') {
       updateCustomEditorFields();
@@ -561,6 +556,7 @@
     }
     renderThemeRows();
     renderEffectSliders();
+    renderSeasonalControls();
     await saveThemeId(id);
   }
 
