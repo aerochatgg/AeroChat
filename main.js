@@ -80,10 +80,55 @@ app.on('before-quit', () => { isQuitting = true; }); // e.g. Windows shutting do
 // Clicking a message notification while hidden should bring the window back
 ipcMain.on('show-window', showWindow);
 
+// ---------- Auto update ----------
+// Checks the latest GitHub release (needs AeroChat-Setup.exe + latest.yml
+// attached to it), downloads newer versions quietly in the background, and
+// lets the Home page offer "install now". Quitting also installs it.
+const { autoUpdater } = require('electron-updater');
+const UPDATE_CHECK_EVERY_MS = 30 * 60 * 1000;
+let updateStatus = { state: 'none' }; // none | available | downloading | ready
+let installWhenReady = false;
+
+function setUpdateStatus(status) {
+  updateStatus = status;
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-status', status);
+}
+
+function installUpdateNow() {
+  isQuitting = true; // let the window actually close instead of hiding to the tray
+  autoUpdater.quitAndInstall(true, true); // silent install, then reopen AeroChat
+}
+
+function setUpAutoUpdates() {
+  if (!app.isPackaged) return; // only the installed app can update itself
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('update-available', info => setUpdateStatus({ state: 'available', version: info.version }));
+  autoUpdater.on('download-progress', p => setUpdateStatus({ state: 'downloading', version: updateStatus.version, percent: Math.round(p.percent) }));
+  autoUpdater.on('update-downloaded', info => {
+    setUpdateStatus({ state: 'ready', version: info.version });
+    if (installWhenReady) installUpdateNow();
+  });
+  autoUpdater.on('error', err => {
+    console.warn('Update check failed:', err && err.message);
+    if (updateStatus.state !== 'ready') setUpdateStatus({ state: 'none' }); // try again next check
+  });
+  const check = () => autoUpdater.checkForUpdates().catch(() => {});
+  check();
+  setInterval(check, UPDATE_CHECK_EVERY_MS);
+}
+
+ipcMain.handle('get-update-status', () => updateStatus);
+ipcMain.on('install-update', () => {
+  if (updateStatus.state === 'ready') installUpdateNow();
+  else installWhenReady = true; // still downloading - install the moment it finishes
+});
+
 app.whenReady().then(() => {
   if (!gotSingleInstanceLock) return; // this copy is closing - the other one was brought forward
   createWindow();
   createTray();
+  setUpAutoUpdates();
 
   // Explicitly allow microphone/camera access for calling — without this,
   // some Windows setups and any future macOS build can silently block it.

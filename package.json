@@ -1,13 +1,13 @@
 {
   "name": "aerochat-desktop",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "AeroChat desktop app",
   "main": "main.js",
   "author": "You",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder"
+    "build": "electron-builder --publish never"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -39,6 +39,16 @@
     },
     "linux": {
       "target": "AppImage"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "aerochatgg",
+        "repo": "AeroChat"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   }
 }

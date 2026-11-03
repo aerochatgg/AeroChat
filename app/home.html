@@ -152,6 +152,19 @@
   }
   .unread-note.show { visibility: visible; }
 
+  /* Desktop app: "Update available, install now?" */
+  .update-note {
+    display: none; margin-top: -4px;
+    color: #fff; font-family: 'Quicksand', sans-serif; font-weight: 600; font-size: 14.5px;
+    text-shadow: 0 1px 3px rgba(10,60,100,0.45);
+  }
+  .update-note.show { display: block; }
+  .update-note button {
+    border: none; background: none; padding: 0; cursor: pointer; color: inherit; font: inherit;
+    font-weight: 800; text-decoration: underline; text-underline-offset: 3px; text-shadow: inherit;
+  }
+  .update-note button:hover { opacity: 0.85; }
+
   .home-footer { position: relative; z-index: 2; flex-shrink: 0; text-align: center; padding: 0 20px 18px; display: none; }
   .home-footer.show { display: block; }
   .home-footer a {
@@ -188,6 +201,7 @@
   <div class="chat-btn-wrap">
     <button class="chat-btn" id="chatBtn">chat</button>
     <div class="unread-note" id="unreadNote"></div>
+    <div class="update-note" id="updateNote"></div>
   </div>
 </div>
 
@@ -204,6 +218,38 @@
     link.href = dl.url;
     link.textContent = `💻 Get AeroChat Desktop ${dl.label}`;
     document.getElementById('desktopFooter').classList.add('show');
+  })();
+
+  // Desktop app only: offer to install a new version once one is found
+  (function setUpUpdateNote() {
+    const desktop = window.aeroDesktop;
+    if (!desktop || !desktop.getUpdateStatus) return;
+    const note = document.getElementById('updateNote');
+    let clicked = false;
+
+    function render(status) {
+      note.innerHTML = '';
+      if (!status || status.state === 'none') { note.classList.remove('show'); return; }
+      note.classList.add('show');
+      if (clicked) {
+        note.textContent = status.state === 'downloading'
+          ? `Downloading update… ${status.percent || 0}%`
+          : status.state === 'ready' ? 'Restarting AeroChat to update…' : 'Getting the update ready…';
+        return;
+      }
+      const btn = document.createElement('button');
+      btn.textContent = 'install now?';
+      btn.title = status.version ? `Update to version ${status.version}` : 'Install the update';
+      btn.addEventListener('click', () => {
+        clicked = true;
+        desktop.installUpdate();
+        render(status);
+      });
+      note.append('Update available, ', btn);
+    }
+
+    desktop.onUpdateStatus(render);
+    desktop.getUpdateStatus().then(render);
   })();
 
   async function init() {
