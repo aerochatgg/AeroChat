@@ -588,6 +588,24 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
 
+  /* Right-click someone in a call: per-person volume / mute / hide video */
+  .peer-menu {
+    display: none; position: fixed; z-index: 90; width: 250px; padding: 14px 16px 12px;
+    border-radius: 18px; background: var(--glass-strong); border: 1px solid var(--glass-border, rgba(255,255,255,0.8));
+    backdrop-filter: blur(16px); box-shadow: 0 10px 30px rgba(10,60,100,0.3), inset 0 1px 0 rgba(255,255,255,0.8);
+    color: var(--ink);
+  }
+  .peer-menu.show { display: block; animation: pickerPop 0.18s cubic-bezier(0.34,1.56,0.64,1) both; }
+  .peer-menu-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 15px; }
+  .peer-menu-head .avatar { width: 32px; height: 32px; }
+  .peer-menu-head span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .peer-menu-row { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 13.5px; margin-bottom: 6px; }
+  .peer-menu-row .peer-volume-value { color: var(--ink-soft); font-size: 12.5px; }
+  .peer-menu .settings-slider { margin-bottom: 12px; }
+  .peer-menu .settings-row { margin-bottom: 8px; font-weight: 700; font-size: 13.5px; }
+  .peer-menu-hint { font-size: 11px; color: var(--ink-soft); margin-top: 4px; }
+  .peer-badges { margin-left: 4px; }
+
   /* Home / Themes / profiles open in here during a call, so the call keeps going */
   .embedded-page {
     display: none; position: fixed; inset: 0; z-index: 65; width: 100%; height: 100%;
@@ -1180,6 +1198,21 @@
   </div>
 </div>
 <audio id="remoteAudioOnly" autoplay></audio>
+
+<div class="peer-menu" id="peerMenu">
+  <div class="peer-menu-head"><div class="avatar no-status" id="peerMenuAvatar"></div><span id="peerMenuName"></span></div>
+  <div class="peer-menu-row"><span>🔊 Volume</span><span class="peer-volume-value" id="peerMenuVolumeValue">100%</span></div>
+  <input type="range" min="0" max="200" step="5" class="settings-slider" id="peerMenuVolume">
+  <div class="settings-row">
+    <span>🔇 Mute</span>
+    <label class="toggle-switch"><input type="checkbox" id="peerMenuMute"><span class="toggle-slider"></span></label>
+  </div>
+  <div class="settings-row">
+    <span>📷 Hide video</span>
+    <label class="toggle-switch"><input type="checkbox" id="peerMenuHideVideo"><span class="toggle-slider"></span></label>
+  </div>
+  <div class="peer-menu-hint">Only changes what you hear and see.</div>
+</div>
 <audio id="ringtoneAudio" src="ringtone.mp3" loop></audio>
 
 <!-- Floating pill shown while a call is minimized -->
@@ -2984,7 +3017,148 @@
     applySpeakerToElement(document.getElementById('remoteVideo'));
     applySpeakerToElement(document.getElementById('remoteAudioOnly'));
     document.querySelectorAll('.group-tile video').forEach(applySpeakerToElement);
+    if (boostCtx && selectedSpeakerId && boostCtx.setSinkId) boostCtx.setSinkId(selectedSpeakerId).catch(() => {});
   }
+
+  // ---------- Per-person call controls (right-click someone in a call) ----------
+  // Only changes what *you* hear and see - nothing is sent to the other person.
+  // Volume is remembered per person; mute and hide-video last for the current call.
+  const PEER_VOLUME_KEY = 'aerochat-user-volumes';
+  let peerVolumes = {};
+  try { peerVolumes = JSON.parse(localStorage.getItem(PEER_VOLUME_KEY)) || {}; } catch (e) {}
+  let peerMuted = {};        // userId -> true
+  let peerVideoHidden = {};  // userId -> true
+  const peerAudio = {};      // userId -> { el, stream, boost }
+  let boostCtx = null;       // only used for people turned up past 100%
+
+  // Which element is playing this person's voice (called when their audio arrives)
+  function registerPeerAudio(userId, el, stream) {
+    releasePeerAudio(userId);
+    peerAudio[userId] = { el, stream, boost: null };
+    applyPeerAudio(userId);
+  }
+
+  function applyPeerAudio(userId) {
+    const p = peerAudio[userId];
+    if (!p) return;
+    const level = peerMuted[userId] ? 0 : (peerVolumes[userId] ?? 1) * currentCallVolume;
+    if (level <= 1) {
+      // Up to 100%: normal playback (keeps the browser's echo cancellation)
+      if (p.boost) p.boost.gain.gain.value = 0;
+      p.el.muted = level === 0;
+      p.el.volume = level;
+      return;
+    }
+    // Past 100%: players can't go louder, so amplify through Web Audio instead
+    // (the element stays attached but muted, which Chrome needs to keep the audio flowing)
+    p.el.muted = true;
+    if (!p.boost) {
+      if (!boostCtx) {
+        boostCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (selectedSpeakerId && boostCtx.setSinkId) boostCtx.setSinkId(selectedSpeakerId).catch(() => {});
+      }
+      const source = boostCtx.createMediaStreamSource(p.stream);
+      const gain = boostCtx.createGain();
+      source.connect(gain).connect(boostCtx.destination);
+      p.boost = { source, gain };
+    }
+    if (boostCtx.state === 'suspended') boostCtx.resume();
+    p.boost.gain.gain.value = level;
+  }
+
+  function applyAllPeerAudio() {
+    Object.keys(peerAudio).forEach(applyPeerAudio);
+  }
+
+  function releasePeerAudio(userId) {
+    const p = peerAudio[userId];
+    if (p && p.boost) { p.boost.source.disconnect(); p.boost.gain.disconnect(); }
+    delete peerAudio[userId];
+  }
+
+  // Call over: forget this call's mutes/hidden videos (volumes are kept)
+  function resetPeerControls() {
+    Object.keys(peerAudio).forEach(releasePeerAudio);
+    peerMuted = {};
+    peerVideoHidden = {};
+    if (boostCtx) { boostCtx.close(); boostCtx = null; }
+    closePeerMenu();
+  }
+
+  function peerBadgeText(userId) {
+    return (peerMuted[userId] ? ' 🔇' : '') + (peerVideoHidden[userId] ? ' 📷' : '');
+  }
+  function refreshPeerBadges(userId) {
+    const tileName = document.querySelector('.group-tile[data-user-id="' + userId + '"] .peer-badges');
+    if (tileName) tileName.textContent = peerBadgeText(userId);
+    if (callPeer && callPeer.id === userId) {
+      document.getElementById('inCallName').textContent = (callPeer.display_name || callPeer.username) + peerBadgeText(userId);
+    }
+  }
+
+  let peerMenuUserId = null;
+  function openPeerMenu(userId, profile, x, y) {
+    peerMenuUserId = userId;
+    const avatar = document.getElementById('peerMenuAvatar');
+    avatar.setAttribute('style', avatarStyleFor(profile));
+    avatar.innerHTML = avatarInner(profile);
+    document.getElementById('peerMenuName').textContent = profile.display_name || profile.username;
+    const volume = Math.round((peerVolumes[userId] ?? 1) * 100);
+    document.getElementById('peerMenuVolume').value = volume;
+    document.getElementById('peerMenuVolumeValue').textContent = volume + '%';
+    document.getElementById('peerMenuMute').checked = !!peerMuted[userId];
+    document.getElementById('peerMenuHideVideo').checked = !!peerVideoHidden[userId];
+    const menu = document.getElementById('peerMenu');
+    menu.classList.add('show');
+    // keep it on screen
+    const w = menu.offsetWidth, h = menu.offsetHeight;
+    menu.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + 'px';
+    menu.style.top = Math.max(8, Math.min(y, innerHeight - h - 8)) + 'px';
+  }
+  function closePeerMenu() {
+    peerMenuUserId = null;
+    document.getElementById('peerMenu').classList.remove('show');
+  }
+
+  document.addEventListener('contextmenu', e => {
+    const tile = e.target.closest('.group-tile');
+    if (tile && inGroupCall) {
+      const id = tile.getAttribute('data-user-id');
+      if (id === me.id) return;
+      e.preventDefault();
+      openPeerMenu(id, findGroupCallProfile(id), e.clientX, e.clientY);
+      return;
+    }
+    if (e.target.closest('#remoteVideo, #remotePlaceholder') && callPeer && callState === 'active') {
+      e.preventDefault();
+      openPeerMenu(callPeer.id, callPeer, e.clientX, e.clientY);
+    }
+  });
+  document.addEventListener('mousedown', e => {
+    if (peerMenuUserId && !e.target.closest('#peerMenu')) closePeerMenu();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && peerMenuUserId) closePeerMenu(); });
+
+  document.getElementById('peerMenuVolume').addEventListener('input', e => {
+    if (!peerMenuUserId) return;
+    const v = parseInt(e.target.value, 10);
+    document.getElementById('peerMenuVolumeValue').textContent = v + '%';
+    if (v === 100) delete peerVolumes[peerMenuUserId]; else peerVolumes[peerMenuUserId] = v / 100;
+    try { localStorage.setItem(PEER_VOLUME_KEY, JSON.stringify(peerVolumes)); } catch (err) {}
+    applyPeerAudio(peerMenuUserId);
+  });
+  document.getElementById('peerMenuMute').addEventListener('change', e => {
+    if (!peerMenuUserId) return;
+    if (e.target.checked) peerMuted[peerMenuUserId] = true; else delete peerMuted[peerMenuUserId];
+    applyPeerAudio(peerMenuUserId);
+    refreshPeerBadges(peerMenuUserId);
+  });
+  document.getElementById('peerMenuHideVideo').addEventListener('change', e => {
+    if (!peerMenuUserId) return;
+    if (e.target.checked) peerVideoHidden[peerMenuUserId] = true; else delete peerVideoHidden[peerMenuUserId];
+    if (inGroupCall) updateGroupTileVisual(peerMenuUserId); else updateCallVisuals();
+    refreshPeerBadges(peerMenuUserId);
+  });
 
   async function populateAudioDeviceLists() {
     if (!isDesktopApp) return;
@@ -3084,8 +3258,7 @@
 
   document.getElementById('callVolumeSlider').addEventListener('input', e => {
     currentCallVolume = e.target.value / 100;
-    document.getElementById('remoteVideo').volume = currentCallVolume;
-    document.getElementById('remoteAudioOnly').volume = currentCallVolume;
+    applyAllPeerAudio();
   });
   document.getElementById('callVolumeSlider').addEventListener('change', async () => {
     await supabaseClient.from('profiles').update({ call_volume: currentCallVolume }).eq('id', me.id);
@@ -3374,12 +3547,14 @@
       if (isVideoCall) {
         remoteVideo.srcObject = e.streams[0];
         applySpeakerToElement(remoteVideo);
+        if (e.track.kind === 'audio') registerPeerAudio(targetId, remoteVideo, e.streams[0]);
       } else if (e.track.kind === 'video') {
         // Screen share during a voice call - video only, audio keeps playing below
         remoteVideo.srcObject = new MediaStream([e.track]);
       } else {
         remoteAudio.srcObject = e.streams[0];
         applySpeakerToElement(remoteAudio);
+        registerPeerAudio(targetId, remoteAudio, e.streams[0]);
       }
     };
     conn.onconnectionstatechange = () => {
@@ -3433,7 +3608,8 @@
     document.getElementById('screenShareBtn').classList.toggle('sharing', !!screenTrack);
     remoteVideo.classList.toggle('screen', remoteScreenOn);
 
-    if (remoteScreenOn || (isVideoCall && remoteVideoOn)) {
+    const hiddenByMe = callPeer && peerVideoHidden[callPeer.id];
+    if ((remoteScreenOn || (isVideoCall && remoteVideoOn)) && !hiddenByMe) {
       remoteVideo.style.display = 'block';
       placeholder.style.display = 'none';
     } else {
@@ -3521,8 +3697,7 @@
     remoteVideoOn = isVideoCall;
     const localVideo = document.getElementById('localVideo');
     if (isVideoCall) localVideo.srcObject = localStream;
-    document.getElementById('remoteVideo').volume = currentCallVolume;
-    document.getElementById('remoteAudioOnly').volume = currentCallVolume;
+    applyAllPeerAudio();
     spawnCallBubbles();
     updateCallVisuals();
     showOverlay('inCallOverlay');
@@ -3549,6 +3724,7 @@
     document.getElementById('remoteVideo').srcObject = null;
     document.getElementById('localVideo').srcObject = null;
     document.getElementById('remoteAudioOnly').srcObject = null;
+    if (!inGroupCall) resetPeerControls();
     pendingCandidates = [];
     callPeer = null;
     callState = 'idle';
@@ -3885,7 +4061,7 @@
     tile.innerHTML =
       '<video autoplay playsinline' + (userId === me.id ? ' muted' : '') + '></video>' +
       '<div class="group-tile-placeholder"><div class="avatar-big" style="' + avatarStyleFor(profile) + '">' + avatarInner(profile) + '</div></div>' +
-      '<div class="group-tile-name">' + (profile.display_name || profile.username) + '</div>';
+      '<div class="group-tile-name">' + escapeHtml(profile.display_name || profile.username) + '<span class="peer-badges"></span></div>';
     document.getElementById('groupTileGrid').appendChild(tile);
     return tile;
   }
@@ -3901,7 +4077,8 @@
     const sharing = userId === me.id ? !!groupScreenTrack : !!groupParticipantScreen[userId];
     tile.classList.toggle('screen-tile', sharing);
     video.classList.toggle('screen', sharing);
-    if (sharing || (isVideoCallMode && on)) {
+    const hiddenByMe = userId !== me.id && peerVideoHidden[userId];
+    if ((sharing || (isVideoCallMode && on)) && !hiddenByMe) {
       video.style.display = 'block';
       placeholder.style.display = 'none';
     } else {
@@ -3935,6 +4112,7 @@
       tile.querySelector('video').srcObject = e.streams[0];
       updateGroupTileVisual(remoteId);
       applySpeakerToElement(tile.querySelector('video'));
+      if (e.track.kind === 'audio') registerPeerAudio(remoteId, tile.querySelector('video'), e.streams[0]);
     };
     conn.onconnectionstatechange = () => {
       if (['disconnected', 'failed', 'closed'].includes(conn.connectionState)) teardownGroupPeer(remoteId);
@@ -3948,6 +4126,8 @@
     delete groupPendingCandidates[remoteId];
     delete groupScreenSenders[remoteId];
     delete groupParticipantScreen[remoteId];
+    releasePeerAudio(remoteId);
+    if (peerMenuUserId === remoteId) closePeerMenu();
   }
 
   async function initiateGroupPeer(remoteId) {
@@ -4193,6 +4373,7 @@
     if (groupScreenTrack) { groupScreenTrack.onended = null; groupScreenTrack.stop(); groupScreenTrack = null; }
     groupScreenSenders = {};
     groupParticipantScreen = {};
+    resetPeerControls();
     document.getElementById('groupScreenShareBtn').classList.remove('sharing');
     if (groupCallRoomChannel) {
       groupCallRoomChannel.untrack();
